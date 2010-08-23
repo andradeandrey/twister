@@ -1,6 +1,6 @@
 ## Overview
 
-Twister is a collection of useful utiltiies for writing web applications in
+Twister is a collection of useful utilities for writing web applications in
 [Go](http://golang.org/). 
 
 Twister includes the following features:
