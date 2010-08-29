@@ -6,6 +6,7 @@ Twister is a collection of useful utilities for writing web applications in
 Twister includes the following features:
 
 * Request routing using path and method.
+* Request routing using host header
 
 ## Installation
 
@@ -20,7 +21,7 @@ Twister includes the following features:
     )
 
     func main() {
-        r  := web.NewRouter()
+        r  := web.NewRouter(nil)
         r.Register("/", "GET",  homeHandler)
         r.Register("/<page>", "GET", viewHandler)
         r.Register("/<page>/edit", "GET", editHandler, "POST", saveHandler)

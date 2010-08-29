@@ -1,7 +1,7 @@
 run: example
 	./example -hostOverride=www.example.com
  
-include $(GOROOT)/src/Make.$(GOARCH)
+include $(GOROOT)/src/Make.inc
 
 TARG=example
 GOFILES=\
