@@ -15,32 +15,48 @@
 package web
 
 import (
-	"regexp"
 	"bytes"
-	"utf8"
-	"http"
 	"container/vector"
+	"http"
+	"regexp"
+	"utf8"
+	"flag"
+	"strings"
 )
 
-// HTTPError replies to the request with the specified status code and error
-// message.
-type HTTPError struct {
-	status  int
-	message string
+// Router dispatches HTTP requests to a handler using the path component of the
+// request URL and the request method.
+//
+// A router maintains a list of routes. A route consists of a request path
+// pattern and a collection of (method, handler) pairs.
+//
+// A pattern is a string with embedded parameters. A parameter has the syntax:
+//
+// '<' name (':' regexp)? '>'
+//
+// If the regexp is not specified, then the regexp is set to to [^/X]+ where
+// "X" is the character following the closing '>' or nothing if the closing
+// '>' is at the end of the pattern.
+//
+// The pattern must begin with the character '/'.
+//
+// A router dispatches requests by matching the path component of the request
+// URL against the route patterns in the order that the routes were registered.
+// If a matching route is found, then the router searches the route for a
+// handler using the request method, "GET" if the request method is "HEAD" and
+// "*". If a handler is not found, the router responds with HTTP status 405. If
+// a route is not found, then the router responds with HTTP status 404.
+//
+// The handler can access the path parameters in the request Form.
+//
+// If a pattern ends with '/', then the router redirects the URL without the
+// trailing slash to the URL with the trailing slash.
+//
+type Router struct {
+	errorHandler func(statusCode int, conn *http.Conn, req *http.Request)
+	routes       vector.Vector
 }
 
-func (e *HTTPError) ServeHTTP(conn *http.Conn, req *http.Request) {
-	http.Error(conn, e.message, e.status)
-}
-
-// addSlash redirects to the request URL with a trailing slash.
-func addSlash(conn *http.Conn, req *http.Request) {
-	path := req.URL.Path + "/"
-	if len(req.URL.RawQuery) > 0 {
-		path = path + "?" + req.URL.RawQuery
-	}
-	http.Redirect(conn, path, http.StatusMovedPermanently)
-}
 
 type route struct {
 	addSlash bool
@@ -90,36 +106,6 @@ func compilePattern(pattern string, addSlash bool) (*regexp.Regexp, []string) {
 	return regexp.MustCompile(buf.String()), names[0:i]
 }
 
-// Router dispatches HTTP requests to a handler using the path component of the
-// request URL and the request method.
-//
-// A router maintains a list of routes. A route consists of a request path
-// pattern and a collection of (method, handler) pairs.
-//
-// A pattern is a string with embedded parameters. A parameter has the syntax:
-//
-// '<' name (':' regexp)? '>'
-//
-// If the regexp is not specified, then the regexp is set to to [^/X]+ where
-// "X" is the character following the closing '>' or nothing if the closing 
-// '>' is at the end of the pattern.
-//
-// The pattern must begin with the character '/'.
-//
-// A router dispatches requests by matching the path component of the request
-// URL against the route patterns in the order that the routes were registered.
-// If a matching route is found, then the router searches the route for a
-// handler using the request method, "GET" if the request method is "HEAD" and
-// "*". If a handler is not found, the router responds with HTTP status 405. If
-// a route is not found, then the router responds with HTTP status 404.
-//
-// If a pattern ends with '/', then the router redirects the URL without the
-// trailing slash to the URL with the trailing slash.
-//
-type Router struct {
-	routes vector.Vector
-}
-
 // Register the route with the given pattern and handlers. The structure of the
 // handlers argument is:
 //
@@ -127,7 +113,7 @@ type Router struct {
 //
 // where method is a string and handler is an http.Handler or a
 // func(*http.Conn, *http.Request). Use "*" to match all methods.
-func (router *Router) Register(pattern string, handlers ...interface{}) {
+func (router *Router) Register(pattern string, handlers ...interface{}) *Router {
 	if pattern == "" || pattern[0] != '/' {
 		panic("twister: Invalid route pattern " + pattern)
 	}
@@ -154,6 +140,30 @@ func (router *Router) Register(pattern string, handlers ...interface{}) {
 		}
 	}
 	router.routes.Push(&r)
+    return router
+}
+
+type routerError struct {
+	router     *Router
+	statusCode int
+    message     string
+}
+
+func (re *routerError) ServeHTTP(conn *http.Conn, req *http.Request) {
+    if re.router.errorHandler != nil  {
+        re.router.errorHandler(re.statusCode, conn, req)
+    } else {
+        http.Error(conn, re.message, re.statusCode)
+    }
+}
+
+// addSlash redirects to the request URL with a trailing slash.
+func addSlash(conn *http.Conn, req *http.Request) {
+	path := req.URL.Path + "/"
+	if len(req.URL.RawQuery) > 0 {
+		path = path + "?" + req.URL.RawQuery
+	}
+	http.Redirect(conn, path, http.StatusMovedPermanently)
 }
 
 // Given the path componennt of the request URL and the request method, find
@@ -171,7 +181,7 @@ func (router *Router) find(path string, method string) (http.Handler, []string, 
 		values = values[1:]
 		for j := 0; j < len(values); j++ {
 			if value, e := http.URLUnescape(values[j]); e != nil {
-				return &HTTPError{400, "Bad Request"}, nil, nil
+				return &routerError{router, 400, "Bad request."}, nil, nil
 			} else {
 				values[j] = value
 			}
@@ -187,9 +197,9 @@ func (router *Router) find(path string, method string) (http.Handler, []string, 
 		if handler := r.handlers["*"]; handler != nil {
 			return handler, r.names, values
 		}
-		return &HTTPError{405, "Method not found"}, nil, nil
+		return &routerError{router, 405, "Method not supported."}, nil, nil
 	}
-	return &HTTPError{404, "Not Found"}, nil, nil
+	return &routerError{router, 404, "Not found."}, nil, nil
 }
 
 // ServeHTTP dispatches the request to a registered handler.
@@ -202,7 +212,52 @@ func (router *Router) ServeHTTP(conn *http.Conn, req *http.Request) {
 	handler.ServeHTTP(conn, req)
 }
 
-// Create a router.
-func NewRouter() *Router {
-	return new(Router)
+// NewRouter allocates and initializes a new Router. If the router encounters
+// an error when serving a request, then the errorHandler function is called to
+// generate the response.
+func NewRouter(errorHandler func(statusCode int, conn *http.Conn, req *http.Request)) *Router {
+	return &Router{errorHandler: errorHandler}
+}
+
+// HostRouter dispatches HTTP requests to a handler using the host header.
+//
+// To enable debugging on localhost, the router overrides the request host with
+// the value of the hostOverride flag if set.
+//
+// If a registered handler is not found, then the router dispatches to a
+// default handler.
+type HostRouter struct {
+	defaultHandler http.Handler
+	handlers       map[string]http.Handler
+}
+
+// NewHostRouter allocates and initializes a new HostRouter.
+func NewHostRouter(defaultHandler http.Handler) *HostRouter {
+    if defaultHandler == nil {
+        defaultHandler = http.NotFoundHandler()
+    }
+	return &HostRouter{defaultHandler: defaultHandler, handlers: make(map[string]http.Handler)}
+}
+
+// Register a handler for the given host.
+func (router *HostRouter) Register(host string, handler http.Handler) *HostRouter {
+	router.handlers[strings.ToLower(host)] = handler
+    return router
+}
+
+var hostOverride = flag.String("hostOverride", "", "Override request host in HostRouter")
+
+// ServeHTTP dispatches the request to a registered handler.
+func (router *HostRouter) ServeHTTP(conn *http.Conn, req *http.Request) {
+	var host string
+	if len(*hostOverride) == 0 {
+		host = strings.ToLower(req.Host)
+	} else {
+		host = *hostOverride
+	}
+	if handler, found := router.handlers[host]; found {
+		handler.ServeHTTP(conn, req)
+	} else {
+		router.defaultHandler.ServeHTTP(conn, req)
+	}
 }

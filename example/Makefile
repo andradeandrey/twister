@@ -1,5 +1,5 @@
 run: example
-	./example
+	./example -hostOverride=www.example.com
  
 include $(GOROOT)/src/Make.$(GOARCH)
 

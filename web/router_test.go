@@ -19,19 +19,16 @@ import (
 	"testing"
 )
 
-// I'd like test the complete code path, but there does not appear to be a way
-// to construct a fake http.Conn.
-
 type rhandler string
 
 func (rhandler) ServeHTTP(conn *http.Conn, req *http.Request) {}
 
 func TestRouter(t *testing.T) {
-	r := NewRouter()
+	r := NewRouter(nil)
 	r.Register("/", "GET", rhandler("home-get"))
 	r.Register("/a", "GET", rhandler("a-get"), "*", rhandler("a-*"))
 	r.Register("/b", "GET", rhandler("b-get"), "POST", rhandler("b-post"))
-    r.Register("/c", "*", rhandler("c-*"))
+	r.Register("/c", "*", rhandler("c-*"))
 
 	expectHandler := func(method string, path string, expectedName string, names []string, values []string) {
 		handler, names, values := r.find(path, method)
@@ -45,14 +42,14 @@ func TestRouter(t *testing.T) {
 		}
 	}
 
-	expectError := func(method string, path string, status int) {
+	expectError := func(method string, path string, statusCode int) {
 		handler, _, _ := r.find(path, method)
-		error, ok := handler.(*HTTPError)
+		re, ok := handler.(*routerError)
 		if !ok {
 			t.Errorf("Unexpected handler type for %s %s", method, path)
 		}
-		if error.status != status {
-			t.Errorf("Unexpected status for %s %s, actual %d expected %d", method, path, error.status, status)
+		if re.statusCode != statusCode {
+			t.Errorf("Unexpected status for %s %s, actual %d expected %d", method, path, re.statusCode, statusCode)
 		}
 	}
 

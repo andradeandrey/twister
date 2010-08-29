@@ -3,6 +3,7 @@ package main
 import (
     "http"
     "log"
+    "flag"
     "template"
     "github.com/garyburd/twister/web"
 )
@@ -34,11 +35,16 @@ const homeStr = `
 </html> `
 
 func main() {
-    r  := web.NewRouter()
+    flag.Parse()
+    r  := web.NewRouter(nil)
     r.Register("/", "GET",  homeHandler)
     r.Register("/a/<a>/", "GET", homeHandler)
     r.Register("/b/<a>/c/<b>", "GET", homeHandler)
-    err := http.ListenAndServe(":8080", r)
+
+    hr := web.NewHostRouter(nil)
+    hr.Register("www.example.com", r)
+
+    err := http.ListenAndServe(":8080", hr)
     if err != nil {
         log.Exit("ListenAndServe:", err)
     }
