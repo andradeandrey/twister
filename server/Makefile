@@ -19,3 +19,6 @@ GOFILES=\
     server.go\
 
 include $(GOROOT)/src/Make.pkg
+
+goinstall:
+	goinstall github.com/garyburd/twister/server

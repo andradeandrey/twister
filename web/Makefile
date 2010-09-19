@@ -16,7 +16,11 @@ include $(GOROOT)/src/Make.inc
 
 TARG=web
 GOFILES=\
+    spec.go\
     web.go\
     router.go\
 
 include $(GOROOT)/src/Make.pkg
+
+goinstall:
+	goinstall github.com/garyburd/twister/web

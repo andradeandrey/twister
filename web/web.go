@@ -15,86 +15,181 @@
 package web
 
 import (
+	"container/vector"
 	"http"
-    "container/vector"
-    "io"
-    "strings"
+	"fmt"
+	"io"
+	"os"
+	"bufio"
 )
 
-var (
-	isText [256]bool
-	isToken  [256]bool
-	isSpace  [256]bool
-)
+// StringsMap maps strings to slices of strings.
+type StringsMap map[string][]string
 
-func init() {
-	// From RFC 2616:
-	// 
-	// OCTET      = <any 8-bit sequence of data>
-	// CHAR       = <any US-ASCII character (octets 0 - 127)>
-	// CTL        = <any US-ASCII control character (octets 0 - 31) and DEL (127)>
-	// CR         = <US-ASCII CR, carriage return (13)>
-	// LF         = <US-ASCII LF, linefeed (10)>
-	// SP         = <US-ASCII SP, space (32)>
-	// HT         = <US-ASCII HT, horizontal-tab (9)>
-	// <">        = <US-ASCII double-quote mark (34)>
-	// CRLF       = CR LF
-	// LWS        = [CRLF] 1*( SP | HT )
-	// TEXT       = <any OCTET except CTLs, but including LWS>
-	// separators = "(" | ")" | "<" | ">" | "@" | "," | ";" | ":" | "\" | <"> 
-	//              | "/" | "[" | "]" | "?" | "=" | "{" | "}" | SP | HT
-	// token      = 1*<any CHAR except CTLs or separators>
-	// qdtext     = <any TEXT except <">>
-
-	for c := 0; c < 256; c++ {
-		isCtl := (0 <= c && c <= 31) || c == 127
-		isChar := 0 <= c && c <= 127
-		isSpace[c] = strings.IndexRune(" \t\r\n", c) >= 0
-		isSeparator := strings.IndexRune(" \t\"(),/:;<=>?@[]\\{}", c) >= 0
-		isText[c] = isSpace[c] || !isCtl
-		isToken[c] = isChar && !isCtl && !isSeparator
-	}
-}
-
-// IsTokenByte returns true if c is a token characeter as defined by RFC 2616
-func IsTokenByte(c byte) bool {
-    return isToken[c]
-}
-
-// IsSpaceByte returns true if c is a space characeter as defined by RFC 2616
-func IsSpaceByte(c byte) bool {
-    return isSpace[c]
-}
-
-// Headers is a map of canonical header keys to an array of strings. Use
-type Headers map[string][]string
-
-// Add value to list of headers for key. The key must be in canonical format.
-func (h Headers) Add(key string, value string) {
-	v := vector.StringVector(h[key])
-	v.Push(value)
-	h[key] = v
-}
-
-// Set header to value, replacing previous values if any. The key must be in
-// canonical format.
-func (h Headers) Set(key string, value string) {
-	h[key] = []string{value}
-}
-
-// Get first header for key. The key must be in canonical format.
-func (h Headers) Get(key string) (value string, ok bool) {
-	values, ok := h[key]
-	if ok {
-		value = values[0]
+// Get returns first value for given key.
+func (m StringsMap) Get(key string) (value string, found bool) {
+	values, found := m[key]
+	if found && len(values) > 0 {
 		return value, true
 	}
 	return "", false
 }
 
-// CanonicalizeHeaderKeyBytes updates the argument to canonical key format were the
-// words separated by '-' are capitalized.
-func CanonicalizeHeaderKeyBytes(p []byte) {
+// GetDef returns first value for given key, or def if key is not found.
+func (m StringsMap) GetDef(key string, def string) (value string) {
+	values, found := m[key]
+	if found && len(values) > 0 {
+		return value
+	}
+	return def
+}
+
+// Append value to slice for given key.
+func (m StringsMap) Append(key string, value string) {
+	v := vector.StringVector(m[key])
+	v.Push(value)
+	m[key] = v
+}
+
+// Set value for given key, discarding previous values if any.
+func (m StringsMap) Set(key string, value string) {
+	m[key] = []string{value}
+}
+
+type RequestBody interface {
+    io.Reader
+}
+
+type ResponseBody interface {
+	io.Writer
+	// Flush writes any buffered data to the network.
+	Flush() os.Error
+}
+
+// Connection represents the server side of an HTTP connection.
+type Connection interface {
+	// Respond commits the status and headers to the network and returns
+	// a writer for the response body.
+	Respond(status int, header StringsMap) ResponseBody
+
+	// Hijack lets the caller take over the connection from the HTTP server.
+	// The caller is responsible for closing the connection.
+	Hijack() (rwc io.ReadWriteCloser, buf *bufio.ReadWriter, err os.Error)
+}
+
+// Request represents an HTTP request.
+type Request struct {
+	Connection    Connection       // The connection.
+	Method        string            // Uppercase request method. GET, POST, etc.
+	URL           *http.URL         // Parsed URL.
+	ProtocolMajor int               // HTTP major version.
+	ProtocolMinor int               // HTTP minor version.
+	Param         StringsMap        // Form, QS and other.
+	Cookie        map[string]string // Cookies.
+	Host          string
+
+	// ErrorHandler responds to the request with the given status code.
+	// Applications set their error handler in middleware. 
+	ErrorHandler func(req *Request, status int, message string)
+
+	// Header maps canonical header names to slices of header values.
+	Header StringsMap
+
+	// ContentLength is the length of the request body. If the value is -1,
+	// then the length of the request body is not known.
+	ContentLength int
+
+	Body RequestBody
+}
+
+// Handler is the interface for web handlers.
+type Handler interface {
+	ServeWeb(req *Request)
+}
+
+// HandlerFunc is a type adapter to allow the use of ordinary functions as web
+// handlers.
+type HandlerFunc func(*Request)
+
+// ServeWeb calls f(req).
+func (f HandlerFunc) ServeWeb(req *Request) { f(req) }
+
+// NewRequest allocates and initializes an empty request.
+func NewRequest() *Request {
+	return &Request{
+		ContentLength: -1,
+		ErrorHandler:  defaultErrorHandler,
+		Param:         make(map[string][]string),
+		Cookie:        make(map[string]string),
+		Header:        make(map[string][]string),
+	}
+}
+
+// Respond is a convenience function that adds (key, value) pairs in kvs to a
+// StringsMap and calls through to the connection's Respond method.
+func (req *Request) Respond(status int, kvs ...string) ResponseBody {
+	if len(kvs)%2 == 1 {
+		panic("twister: respond requires even number of kvs args")
+	}
+	header := StringsMap(make(map[string][]string))
+	for i := 0; i < len(kvs); i += 2 {
+		header.Append(kvs[i], kvs[i+1])
+	}
+	return req.Connection.Respond(status, header)
+}
+
+func defaultErrorHandler(req *Request, status int, message string) {
+	w := req.Respond(status, HeaderContentType, "text/plain; charset=utf-8")
+	if w != nil {
+		fmt.Fprintln(w, message)
+	}
+}
+
+// Error responds to the request with an error. 
+func (req *Request) Error(status int, message string) {
+	req.ErrorHandler(req, status, message)
+}
+
+// Redirect responds to the request with a redirect the specified URL.
+func (req *Request) Redirect(url string, perm bool) {
+	status := StatusFound
+	if perm {
+		status = StatusMovedPermanently
+	}
+	// TODO fix up url
+	req.Respond(status, HeaderLocation, url)
+}
+
+type redirectHandler struct {
+	url       string
+	permanent bool
+}
+
+func (rh *redirectHandler) ServeWeb(req *Request) {
+	req.Redirect(rh.url, rh.permanent)
+}
+
+// RedirectHandler returns a request handler that redirects to the given URL. 
+func RedirectHandler(url string, permanent bool) Handler {
+	return &redirectHandler{url, permanent}
+}
+
+var notFoundHandler = HandlerFunc(func(req *Request) { req.Error(StatusNotFound, "Not Found") })
+
+// NotFoundHandler returns a request handler that responds with 404 not found.
+func NotFoundHandler() Handler {
+	return notFoundHandler
+}
+
+// HeaderName returns the canonical format of the header name s. 
+func HeaderName(name string) string {
+	p := []byte(name)
+	return HeaderNameBytes(p)
+}
+
+// HeaderNameBytes returns the canonical format for the header name specified
+// by the bytes in p. This function modifies the contents p.
+func HeaderNameBytes(p []byte) string {
 	upper := true
 	for i, c := range p {
 		if upper {
@@ -108,33 +203,5 @@ func CanonicalizeHeaderKeyBytes(p []byte) {
 		}
 		upper = c == '-'
 	}
-}
-
-// CanonicalHeaderKey returns the canonical format of the header key s.
-func CanonicalHeaderKey(s string) string {
-	// Other frameworks memoize this function, but that's not a good idea
-	// because that allows an attacker to consume and arbitrary amount of
-	// memory on the server.
-	p := []byte(s)
-	CanonicalizeHeaderKeyBytes(p)
 	return string(p)
 }
-
-// Request represents a parsed HTTP request. 
-type Request struct {
-	// Request method, uppercase
-	Method string
-	// Parsed URL
-	URL *http.URL
-	// HTTP major version
-	ProtocolMajor int
-	// HTTP minor version
-	ProtocolMinor int
-
-	// Headers 
-	Headers Headers
-
-	// The message body.
-	Body io.ReadCloser
-}
-

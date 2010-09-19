@@ -1,15 +1,16 @@
 package main
 
 import (
-    "http"
     "log"
     "flag"
+    "fmt"
     "template"
     "github.com/garyburd/twister/web"
+    "github.com/garyburd/twister/server"
 )
 
-func homeHandler(c *http.Conn, req *http.Request) {
-    homeTempl.Execute(req, c)
+func homeHandler(req *web.Request) {
+    homeTempl.Execute(req, req.Respond(web.StatusOK, web.HeaderContentType, "text/html"))
 }
 
 var homeTempl = template.MustParse(homeStr, nil)
@@ -36,7 +37,7 @@ const homeStr = `
 
 func main() {
     flag.Parse()
-    r  := web.NewRouter(nil)
+    r  := web.NewRouter()
     r.Register("/", "GET",  homeHandler)
     r.Register("/a/<a>/", "GET", homeHandler)
     r.Register("/b/<a>/c/<b>", "GET", homeHandler)
@@ -44,7 +45,9 @@ func main() {
     hr := web.NewHostRouter(nil)
     hr.Register("www.example.com", r)
 
-    err := http.ListenAndServe(":8080", hr)
+    fmt.Println("a")
+    err := server.ListenAndServe(":8080", hr)
+    fmt.Println("b")
     if err != nil {
         log.Exit("ListenAndServe:", err)
     }

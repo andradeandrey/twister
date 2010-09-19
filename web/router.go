@@ -17,11 +17,11 @@ package web
 import (
 	"bytes"
 	"container/vector"
-	"http"
 	"regexp"
 	"utf8"
 	"flag"
 	"strings"
+	"http"
 )
 
 // Router dispatches HTTP requests to a handler using the path component of the
@@ -53,16 +53,14 @@ import (
 // trailing slash to the URL with the trailing slash.
 //
 type Router struct {
-	errorHandler func(statusCode int, conn *http.Conn, req *http.Request)
-	routes       vector.Vector
+	routes vector.Vector
 }
-
 
 type route struct {
 	addSlash bool
 	regexp   *regexp.Regexp
 	names    []string
-	handlers map[string]http.Handler
+	handlers map[string]Handler
 }
 
 var parameterRegexp = regexp.MustCompile("<([A-Za-z0-9]+)(:[^>]*)?>")
@@ -109,10 +107,10 @@ func compilePattern(pattern string, addSlash bool) (*regexp.Regexp, []string) {
 // Register the route with the given pattern and handlers. The structure of the
 // handlers argument is:
 //
-// [method handler]+
+// (method handler)+
 //
-// where method is a string and handler is an http.Handler or a
-// func(*http.Conn, *http.Request). Use "*" to match all methods.
+// where method is a string and handler is a Handler or a
+// func(*Request). Use "*" to match all methods.
 func (router *Router) Register(pattern string, handlers ...interface{}) *Router {
 	if pattern == "" || pattern[0] != '/' {
 		panic("twister: Invalid route pattern " + pattern)
@@ -124,51 +122,46 @@ func (router *Router) Register(pattern string, handlers ...interface{}) *Router 
 	r := route{}
 	r.addSlash = pattern[len(pattern)-1] == '/'
 	r.regexp, r.names = compilePattern(pattern, r.addSlash)
-	r.handlers = make(map[string]http.Handler)
+	r.handlers = make(map[string]Handler)
 	for i := 0; i < len(handlers); i += 2 {
 		method, ok := handlers[i].(string)
 		if !ok {
 			panic("twister: Bad method for pattern " + pattern)
 		}
 		switch handler := handlers[i+1].(type) {
-		case http.Handler:
+		case Handler:
 			r.handlers[method] = handler
-		case func(*http.Conn, *http.Request):
-			r.handlers[method] = http.HandlerFunc(handler)
+		case func(*Request):
+			r.handlers[method] = HandlerFunc(handler)
 		default:
 			panic("twister: Bad handler for pattern " + pattern + " and method " + method)
 		}
 	}
 	router.routes.Push(&r)
-    return router
+	return router
 }
 
 type routerError struct {
-	router     *Router
-	statusCode int
-    message     string
+	status  int
+	message string
 }
 
-func (re *routerError) ServeHTTP(conn *http.Conn, req *http.Request) {
-    if re.router.errorHandler != nil  {
-        re.router.errorHandler(re.statusCode, conn, req)
-    } else {
-        http.Error(conn, re.message, re.statusCode)
-    }
+func (re *routerError) ServeWeb(req *Request) {
+	req.Error(re.status, re.message)
 }
 
 // addSlash redirects to the request URL with a trailing slash.
-func addSlash(conn *http.Conn, req *http.Request) {
+func addSlash(req *Request) {
 	path := req.URL.Path + "/"
 	if len(req.URL.RawQuery) > 0 {
 		path = path + "?" + req.URL.RawQuery
 	}
-	http.Redirect(conn, path, http.StatusMovedPermanently)
+	req.Redirect(path, true)
 }
 
 // Given the path componennt of the request URL and the request method, find
 // the handler and path parameters.
-func (router *Router) find(path string, method string) (http.Handler, []string, []string) {
+func (router *Router) find(path string, method string) (Handler, []string, []string) {
 	for i := 0; i < router.routes.Len(); i++ {
 		r := router.routes.At(i).(*route)
 		values := r.regexp.FindStringSubmatch(path)
@@ -176,12 +169,12 @@ func (router *Router) find(path string, method string) (http.Handler, []string, 
 			continue
 		}
 		if r.addSlash && path[len(path)-1] != '/' {
-			return http.HandlerFunc(addSlash), nil, nil
+			return HandlerFunc(addSlash), nil, nil
 		}
 		values = values[1:]
 		for j := 0; j < len(values); j++ {
 			if value, e := http.URLUnescape(values[j]); e != nil {
-				return &routerError{router, 400, "Bad request."}, nil, nil
+				return &routerError{400, "Bad request."}, nil, nil
 			} else {
 				values[j] = value
 			}
@@ -197,26 +190,23 @@ func (router *Router) find(path string, method string) (http.Handler, []string, 
 		if handler := r.handlers["*"]; handler != nil {
 			return handler, r.names, values
 		}
-		return &routerError{router, 405, "Method not supported."}, nil, nil
+		return &routerError{405, "Method not supported."}, nil, nil
 	}
-	return &routerError{router, 404, "Not found."}, nil, nil
+	return &routerError{404, "Not found."}, nil, nil
 }
 
-// ServeHTTP dispatches the request to a registered handler.
-func (router *Router) ServeHTTP(conn *http.Conn, req *http.Request) {
+// ServeWeb dispatches the request to a registered handler.
+func (router *Router) ServeWeb(req *Request) {
 	handler, names, values := router.find(req.URL.Path, req.Method)
-	req.ParseForm()
 	for i := 0; i < len(names); i++ {
-		req.Form[names[i]] = []string{values[i]}
+		req.Param.Set(names[i], values[i])
 	}
-	handler.ServeHTTP(conn, req)
+	handler.ServeWeb(req)
 }
 
-// NewRouter allocates and initializes a new Router. If the router encounters
-// an error when serving a request, then the errorHandler function is called to
-// generate the response.
-func NewRouter(errorHandler func(statusCode int, conn *http.Conn, req *http.Request)) *Router {
-	return &Router{errorHandler: errorHandler}
+// NewRouter allocates and initializes a new Router. 
+func NewRouter() *Router {
+	return &Router{}
 }
 
 // HostRouter dispatches HTTP requests to a handler using the host header.
@@ -227,28 +217,28 @@ func NewRouter(errorHandler func(statusCode int, conn *http.Conn, req *http.Requ
 // If a registered handler is not found, then the router dispatches to a
 // default handler.
 type HostRouter struct {
-	defaultHandler http.Handler
-	handlers       map[string]http.Handler
+	defaultHandler Handler
+	handlers       map[string]Handler
 }
 
 // NewHostRouter allocates and initializes a new HostRouter.
-func NewHostRouter(defaultHandler http.Handler) *HostRouter {
-    if defaultHandler == nil {
-        defaultHandler = http.NotFoundHandler()
-    }
-	return &HostRouter{defaultHandler: defaultHandler, handlers: make(map[string]http.Handler)}
+func NewHostRouter(defaultHandler Handler) *HostRouter {
+	if defaultHandler == nil {
+		defaultHandler = NotFoundHandler()
+	}
+	return &HostRouter{defaultHandler: defaultHandler, handlers: make(map[string]Handler)}
 }
 
 // Register a handler for the given host.
-func (router *HostRouter) Register(host string, handler http.Handler) *HostRouter {
+func (router *HostRouter) Register(host string, handler Handler) *HostRouter {
 	router.handlers[strings.ToLower(host)] = handler
-    return router
+	return router
 }
 
 var hostOverride = flag.String("hostOverride", "", "Override request host in HostRouter")
 
-// ServeHTTP dispatches the request to a registered handler.
-func (router *HostRouter) ServeHTTP(conn *http.Conn, req *http.Request) {
+// ServeWeb dispatches the request to a registered handler.
+func (router *HostRouter) ServeWeb(req *Request) {
 	var host string
 	if len(*hostOverride) == 0 {
 		host = strings.ToLower(req.Host)
@@ -256,8 +246,8 @@ func (router *HostRouter) ServeHTTP(conn *http.Conn, req *http.Request) {
 		host = *hostOverride
 	}
 	if handler, found := router.handlers[host]; found {
-		handler.ServeHTTP(conn, req)
+		handler.ServeWeb(req)
 	} else {
-		router.defaultHandler.ServeHTTP(conn, req)
+		router.defaultHandler.ServeWeb(req)
 	}
 }
