@@ -57,7 +57,7 @@ func (m StringsMap) Set(key string, value string) {
 }
 
 type RequestBody interface {
-    io.Reader
+	io.Reader
 }
 
 type ResponseBody interface {
@@ -79,7 +79,7 @@ type Connection interface {
 
 // Request represents an HTTP request.
 type Request struct {
-	Connection    Connection       // The connection.
+	Connection    Connection        // The connection.
 	Method        string            // Uppercase request method. GET, POST, etc.
 	URL           *http.URL         // Parsed URL.
 	ProtocolMajor int               // HTTP major version.

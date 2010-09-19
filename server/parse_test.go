@@ -25,7 +25,11 @@ import (
 
 func compare(t *testing.T, expected *web.Request, s string) {
 	b := bufio.NewReader(bytes.NewBufferString(s))
-	actual, err := parseRequest(b)
+	actual := web.NewRequest()
+	err := readStatusLine(b, actual)
+	if err == nil {
+		err = readHeaders(b, actual.Header)
+	}
 	if expected == nil {
 		if err == nil {
 			t.Errorf("parse error expected")
@@ -56,30 +60,27 @@ func TestNoBody(t *testing.T) {
 }
 
 func TestSimple(t *testing.T) {
-	compare(t,
-		&web.Request{
-			ProtocolMajor: 1,
-			ProtocolMinor: 1,
-			URL:           mustParseURL("/foo"),
-			Method:        "GET",
-		},
+	req := web.NewRequest()
+	req.ProtocolMajor = 1
+	req.ProtocolMinor = 1
+	req.URL = mustParseURL("/foo")
+	req.Method = "GET"
+	compare(t, req,
 		`GET /foo HTTP/1.1
 
 `)
 }
 
 func TestHeaders(t *testing.T) {
-	compare(t,
-		&web.Request{
-			ProtocolMajor: 1,
-			ProtocolMinor: 1,
-			URL:           mustParseURL("/foo"),
-			Method:        "GET",
-			Headers: map[string][]string{
-				"Content-Type": []string{"text/html"},
-                "Cookie": []string{"hello=world", "foo=bar"},
-            },
-		},
+	req := web.NewRequest()
+	req.ProtocolMajor = 1
+	req.ProtocolMinor = 1
+	req.URL = mustParseURL("/foo")
+	req.Method = "GET"
+	req.Header.Set(web.HeaderContentType, "text/html")
+	req.Header.Set(web.HeaderCookie, "hello=world")
+	req.Header.Append(web.HeaderCookie, "foo=bar")
+	compare(t, req,
 		`GeT /foo HTTP/1.1
 Content-Type: text/html
 Cookie: hello=world
@@ -89,17 +90,14 @@ Cookie: foo=bar
 }
 
 func TestContinuationLine(t *testing.T) {
-	compare(t,
-		&web.Request{
-			ProtocolMajor: 1,
-			ProtocolMinor: 1,
-			URL:           mustParseURL("/foo"),
-			Method:        "GET",
-			Headers: map[string][]string{
-				"Content-Type": []string{"text/html"},
-                "Cookie": []string{"hello=world, foo=bar"},
-            },
-		},
+	req := web.NewRequest()
+	req.ProtocolMajor = 1
+	req.ProtocolMinor = 1
+	req.URL = mustParseURL("/foo")
+	req.Method = "GET"
+	req.Header.Set(web.HeaderContentType, "text/html")
+	req.Header.Set(web.HeaderCookie, "hello=world, foo=bar")
+	compare(t, req,
 		`GeT /foo HTTP/1.1
 Cookie: hello=world,
  foo=bar
@@ -107,4 +105,3 @@ Content-Type: text/html
 
 `)
 }
-

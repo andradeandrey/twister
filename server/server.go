@@ -222,7 +222,7 @@ func (c *conn) prepare() os.Error {
 		c.closeAfterResponse = true
 	}
 
-    req.Connection = c
+	req.Connection = c
 	req.Body = requestReader{c}
 	return nil
 }
@@ -332,7 +332,7 @@ func (c *conn) Respond(status int, header web.StringsMap) (body web.ResponseBody
 }
 
 func (c *conn) Hijack() (rwc io.ReadWriteCloser, buf *bufio.ReadWriter, err os.Error) {
-    return
+	return
 }
 
 // Finish the HTTP request
