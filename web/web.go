@@ -15,16 +15,37 @@
 package web
 
 import (
+	"bufio"
 	"container/vector"
-	"http"
 	"fmt"
+	"http"
 	"io"
 	"os"
-	"bufio"
+	"path"
+	"strconv"
+	"strings"
+)
+
+var (
+	// Object not in valid state for call.
+	ErrInvalidState = os.NewError("invalid state")
+	ErrBadFormat    = os.NewError("bad format")
 )
 
 // StringsMap maps strings to slices of strings.
 type StringsMap map[string][]string
+
+// NewStringsMap returns a map initialized with the given key-value pairs.
+func NewStringsMap(kvs ...string) StringsMap {
+	if len(kvs)%2 == 1 {
+		panic("twister: even number args required for NewStringsMap")
+	}
+	m := make(StringsMap)
+	for i := 0; i < len(kvs); i += 2 {
+		m.Append(kvs[i], kvs[i+1])
+	}
+	return m
+}
 
 // Get returns first value for given key.
 func (m StringsMap) Get(key string) (value string, found bool) {
@@ -79,14 +100,14 @@ type Connection interface {
 
 // Request represents an HTTP request.
 type Request struct {
-	Connection    Connection        // The connection.
-	Method        string            // Uppercase request method. GET, POST, etc.
-	URL           *http.URL         // Parsed URL.
-	ProtocolMajor int               // HTTP major version.
-	ProtocolMinor int               // HTTP minor version.
-	Param         StringsMap        // Form, QS and other.
-	Cookie        map[string]string // Cookies.
-	Host          string
+	Connection      Connection        // The connection.
+	Method          string            // Uppercase request method. GET, POST, etc.
+	URL             *http.URL         // Parsed URL.
+	ProtocolVersion int               // Major version * 1000 + minor version
+	Param           StringsMap        // Form, QS and other.
+	Cookie          map[string]string // Cookies.
+	Host            string            // Requested host.
+	ContentType     string            // Content type
 
 	// ErrorHandler responds to the request with the given status code.
 	// Applications set their error handler in middleware. 
@@ -95,8 +116,8 @@ type Request struct {
 	// Header maps canonical header names to slices of header values.
 	Header StringsMap
 
-	// ContentLength is the length of the request body. If the value is -1,
-	// then the length of the request body is not known.
+	// ContentLength is the length of the request body or -1 if the content
+	// length is not known.
 	ContentLength int
 
 	Body RequestBody
@@ -115,14 +136,47 @@ type HandlerFunc func(*Request)
 func (f HandlerFunc) ServeWeb(req *Request) { f(req) }
 
 // NewRequest allocates and initializes an empty request.
-func NewRequest() *Request {
-	return &Request{
-		ContentLength: -1,
-		ErrorHandler:  defaultErrorHandler,
-		Param:         make(map[string][]string),
-		Cookie:        make(map[string]string),
-		Header:        make(map[string][]string),
+func NewRequest(method string, url string, protocolVersion int, header StringsMap) (req *Request, err os.Error) {
+	req = &Request{
+		Method:          strings.ToUpper(method),
+		ProtocolVersion: protocolVersion,
+		ErrorHandler:    defaultErrorHandler,
+		Param:           make(StringsMap),
+		Cookie:          make(map[string]string),
+		Header:          header,
 	}
+
+	req.URL, err = http.ParseURL(url)
+	if err != nil {
+		return
+	}
+
+	// The url overrides header per section 5.2 of rfc 2616
+	req.Host = req.URL.Host
+	if req.Host == "" {
+		req.Host = req.Header.GetDef(HeaderHost, "")
+	}
+
+	if s, found := req.Header.Get(HeaderContentLength); found {
+		var err os.Error
+		req.ContentLength, err = strconv.Atoi(s)
+		if err != nil {
+			err = os.ErrorString("bad content length")
+			return
+		}
+	} else {
+		req.ContentLength = -1
+	}
+
+	if s, found := req.Header.Get(HeaderContentType); found {
+		i := 0
+		for i < len(s) && (IsTokenByte(s[i]) || s[i] == '/') {
+			i++
+		}
+		req.ContentType = s[0:i]
+	}
+
+	return
 }
 
 // Respond is a convenience function that adds (key, value) pairs in kvs to a
@@ -156,8 +210,29 @@ func (req *Request) Redirect(url string, perm bool) {
 	if perm {
 		status = StatusMovedPermanently
 	}
-	// TODO fix up url
+
+	// Make relative path absolute
+	u, err := http.ParseURL(url)
+	if err != nil && u.Scheme == "" && url[0] != '/' {
+		d, _ := path.Split(req.URL.Path)
+		url = d + url
+	}
+
 	req.Respond(status, HeaderLocation, url)
+}
+
+// CheckRequestBodyLength returns true and responds to the request with an
+// error if the content length is greater than the specified value.
+func (req *Request) CheckRequestBodyLength(max int) (fail bool) {
+	// TODO implement me
+	return true
+}
+
+// CheckXSRF returns true and responds to the request with an error if the
+// action token in params does not match the action token in the cookie.
+func (req *Request) CheckXSRF(tokenName string) (fail bool) {
+	// TODO implement me
+	return true
 }
 
 type redirectHandler struct {
@@ -179,29 +254,4 @@ var notFoundHandler = HandlerFunc(func(req *Request) { req.Error(StatusNotFound,
 // NotFoundHandler returns a request handler that responds with 404 not found.
 func NotFoundHandler() Handler {
 	return notFoundHandler
-}
-
-// HeaderName returns the canonical format of the header name s. 
-func HeaderName(name string) string {
-	p := []byte(name)
-	return HeaderNameBytes(p)
-}
-
-// HeaderNameBytes returns the canonical format for the header name specified
-// by the bytes in p. This function modifies the contents p.
-func HeaderNameBytes(p []byte) string {
-	upper := true
-	for i, c := range p {
-		if upper {
-			if 'a' <= c && c <= 'z' {
-				p[i] = c + 'A' - 'a'
-			}
-		} else {
-			if 'A' <= c && c <= 'Z' {
-				p[i] = c + 'a' - 'A'
-			}
-		}
-		upper = c == '-'
-	}
-	return string(p)
 }

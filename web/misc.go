@@ -14,11 +14,13 @@
 
 package web
 
-// Constants and definitions from RFC 2616
 
 import (
 	"strings"
+	"os"
 )
+
+// Octet tyeps from RFC 2616
 
 var (
 	isText  [256]bool
@@ -63,6 +65,7 @@ func IsSpaceByte(c byte) bool {
 	return isSpace[c]
 }
 
+// HTTP status codes from RFC 2606
 
 const (
 	StatusContinue                     = 100
@@ -150,6 +153,7 @@ var StatusText = map[int]string{
 	StatusHTTPVersionNotSupported:      "HTTP Version Not Supported",
 }
 
+// Canonical header name constants.
 const (
 	HeaderAccept             = "Accept"
 	HeaderAcceptCharset      = "Accept-Charset"
@@ -205,3 +209,93 @@ const (
 	HeaderSetCookie          = "Set-Cookie"
 	HeaderTransferEncoding   = "Transfer-Encoding"
 )
+
+// HeaderName returns the canonical format of the header name s. 
+func HeaderName(name string) string {
+	p := []byte(name)
+	return HeaderNameBytes(p)
+}
+
+// HeaderNameBytes returns the canonical format for the header name specified
+// by the bytes in p. This function modifies the contents p.
+func HeaderNameBytes(p []byte) string {
+	upper := true
+	for i, c := range p {
+		if upper {
+			if 'a' <= c && c <= 'z' {
+				p[i] = c + 'A' - 'a'
+			}
+		} else {
+			if 'A' <= c && c <= 'Z' {
+				p[i] = c + 'a' - 'A'
+			}
+		}
+		upper = c == '-'
+	}
+	return string(p)
+}
+
+const NotHex = 127
+
+func dehex(c byte) byte {
+	switch {
+	case '0' <= c && c <= '9':
+		return c - '0'
+	case 'a' <= c && c <= 'f':
+		return c - 'a' + 10
+	case 'A' <= c && c <= 'F':
+		return c - 'A' + 10
+	}
+	return NotHex
+}
+
+// parseUrlEncodedFormBytes parses the URL-encoded form and appends the values to
+// the supplied map. This function modifies the contents of p.
+func parseUrlEncodedFormBytes(p []byte, m StringsMap) os.Error {
+	key := ""
+	j := 0
+	for i := 0; i < len(p); {
+		switch p[i] {
+		case '=':
+			key = string(p[0:j])
+			j = 0
+			i += 1
+		case '&':
+			m.Append(key, string(p[0:j]))
+			key = ""
+			j = 0
+			i += 1
+		case '%':
+			if i+2 >= len(p) {
+				return ErrBadFormat
+			}
+			a := dehex(p[i+1])
+			b := dehex(p[i+2])
+			if a == NotHex || b == NotHex {
+				return ErrBadFormat
+			}
+			p[j] = a<<4 | b
+			j += 1
+			i += 3
+		default:
+			p[j] = p[i]
+			j += 1
+			i += 1
+		}
+	}
+	if key != "" {
+		m.Append(key, string(p[0:j]))
+	}
+	return nil
+}
+
+// ProtocolVersion combines HTTP major and minor protocol numbers into a single
+// integer for easy comparision.
+func ProtocolVersion(major int, minor int) int {
+	if minor > 999 {
+		minor = 999
+	}
+	return major*1000 + minor
+}
+
+// ProtocolVersionString converts 

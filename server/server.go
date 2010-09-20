@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"github.com/garyburd/twister/web"
-	"http"
 	"io"
 	"log"
 	"net"
@@ -14,11 +13,7 @@ import (
 	"strings"
 )
 
-var ErrResponseBodyClosed = os.NewError("response body closed")
-var ErrResponseStarted = os.NewError("response started")
-
 type conn struct {
-	atLeastHttp11      bool
 	br                 *bufio.Reader
 	bw                 *bufio.Writer
 	chunked            bool
@@ -60,41 +55,41 @@ func trimWSRight(p []byte) []byte {
 
 var requestLineRegexp = regexp.MustCompile("^([_A-Za-z0-9]+) ([^ ]+) HTTP/([0-9]+)\\.([0-9]+)$")
 
-func readStatusLine(b *bufio.Reader, req *web.Request) os.Error {
+func parseRequestLine(b *bufio.Reader) (method string, url string, version int, err os.Error) {
 
 	p, err := b.ReadSlice('\n')
 	if err != nil {
-		return err
+		return
 	}
 
 	p = trimWSRight(p)
 
 	m := requestLineRegexp.FindSubmatch(p)
 	if m == nil {
-		return os.ErrorString("malformed request line")
+		err = os.ErrorString("malformed request line")
+		return
 	}
 
-	req.Method = string(bytes.ToUpper(m[1]))
+	method = string(m[1])
 
-	req.ProtocolMajor, err = strconv.Atoi(string(m[3]))
+	major, err := strconv.Atoi(string(m[3]))
 	if err != nil {
-		return os.ErrorString("bad major version")
+		return
 	}
 
-	req.ProtocolMinor, err = strconv.Atoi(string(m[4]))
+	minor, err := strconv.Atoi(string(m[4]))
 	if err != nil {
-		return os.ErrorString("bad minor version")
+		return
 	}
 
-	req.URL, err = http.ParseURL(string(m[2]))
-	if err != nil {
-		return os.ErrorString("bad url")
-	}
+	version = web.ProtocolVersion(major, minor)
 
-	return nil
+	url = string(m[2])
+
+	return
 }
 
-func readHeaders(b *bufio.Reader, header web.StringsMap) os.Error {
+func parseHeader(b *bufio.Reader) (header web.StringsMap, err os.Error) {
 
 	const (
 		// Max size for header line
@@ -105,13 +100,14 @@ func readHeaders(b *bufio.Reader, header web.StringsMap) os.Error {
 		maxHeaderCount = 256
 	)
 
+	header = make(web.StringsMap)
 	lastKey := ""
 	headerCount := 0
 
 	for {
 		p, err := b.ReadSlice('\n')
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		// remove line terminator
@@ -130,13 +126,13 @@ func readHeaders(b *bufio.Reader, header web.StringsMap) os.Error {
 
 		// Don't allow huge header lines.
 		if len(p) > maxLineSize {
-			return os.ErrorString("header line too long")
+			return nil, os.ErrorString("header line too long")
 		}
 
 		if web.IsSpaceByte(p[0]) {
 
 			if lastKey == "" {
-				return os.ErrorString("header continuation before first header")
+				return nil, os.ErrorString("header continuation before first header")
 			}
 
 			p = trimWSLeft(trimWSRight(p))
@@ -146,7 +142,7 @@ func readHeaders(b *bufio.Reader, header web.StringsMap) os.Error {
 				value := values[len(values)-1]
 				value = value + " " + string(p)
 				if len(value) > maxValueSize {
-					return os.ErrorString("header value too long")
+					return nil, os.ErrorString("header value too long")
 				}
 				values[len(values)-1] = value
 			}
@@ -156,13 +152,13 @@ func readHeaders(b *bufio.Reader, header web.StringsMap) os.Error {
 			// New header
 			headerCount = headerCount + 1
 			if headerCount > maxHeaderCount {
-				return os.ErrorString("too many headers")
+				return nil, os.ErrorString("too many headers")
 			}
 
 			// Key
 			i := skipBytes(p, web.IsTokenByte)
 			if i < 1 {
-				return os.ErrorString("missing header key")
+				return nil, os.ErrorString("missing header key")
 			}
 			key := web.HeaderNameBytes(p[0:i])
 			p = p[i:]
@@ -172,7 +168,7 @@ func readHeaders(b *bufio.Reader, header web.StringsMap) os.Error {
 
 			// Colon
 			if p[0] != ':' {
-				return os.ErrorString("header missing :")
+				return nil, os.ErrorString("header missing :")
 			}
 			p = p[1:]
 
@@ -182,39 +178,37 @@ func readHeaders(b *bufio.Reader, header web.StringsMap) os.Error {
 			header.Append(key, value)
 		}
 	}
-	return nil
+	return header, nil
 }
 
-func (c *conn) prepare() os.Error {
+func (c *conn) prepare() (err os.Error) {
 
-	req := web.NewRequest()
+	method, url, version, err := parseRequestLine(c.br)
+	if err != nil {
+		return err
+	}
+
+	header, err := parseHeader(c.br)
+	if err != nil {
+		return err
+	}
+
+	req, err := web.NewRequest(method, url, version, header)
+	if err != nil {
+		return
+	}
 	c.req = req
 
-	if err := readStatusLine(c.br, req); err != nil {
-		return err
-	}
-
-	if err := readHeaders(c.br, req.Header); err != nil {
-		return err
-	}
-
-	if s, found := req.Header.Get(web.HeaderContentLength); found {
-		var err os.Error
-		req.ContentLength, err = strconv.Atoi(s)
-		if err != nil {
-			return os.ErrorString("bad content length")
-		}
-		c.requestAvail = req.ContentLength
-	} else {
-		req.ContentLength = -1
+	c.requestAvail = req.ContentLength
+	if c.requestAvail < 0 {
+		c.requestAvail = 0
 	}
 
 	if s, found := req.Header.Get(web.HeaderExpect); found {
 		c.write100Continue = strings.ToLower(s) == "100-continue"
 	}
 
-	c.atLeastHttp11 = req.ProtocolMajor > 1 || req.ProtocolMajor == 1 && req.ProtocolMinor >= 1
-	if c.atLeastHttp11 {
+	if version >= web.ProtocolVersion(1, 1) {
 		if s, found := req.Header.Get(web.HeaderConnection); found && strings.ToLower(s) == "close" {
 			c.closeAfterResponse = true
 		}
@@ -264,7 +258,7 @@ func (c *conn) Respond(status int, header web.StringsMap) (body web.ResponseBody
 	c.respondCalled = true
 	c.chunked = true
 
-	c.requestErr = ErrResponseStarted
+	c.requestErr = web.ErrInvalidState
 	if c.requestAvail > 0 {
 		c.closeAfterResponse = true
 	}
@@ -294,7 +288,7 @@ func (c *conn) Respond(status int, header web.StringsMap) (body web.ResponseBody
 	}
 
 	proto := "HTTP/1.0"
-	if c.atLeastHttp11 {
+	if c.req.ProtocolVersion >= web.ProtocolVersion(1, 1) {
 		proto = "HTTP/1.1"
 	}
 	statusString := strconv.Itoa(status)
@@ -348,7 +342,7 @@ func (c *conn) finish() os.Error {
 		_, c.responseErr = io.WriteString(c.netConn, "0\r\n\r\n")
 	}
 	if c.responseErr == nil {
-		c.responseErr = ErrResponseBodyClosed
+		c.responseErr = web.ErrInvalidState
 	}
 	c.netConn = nil
 	c.br = nil

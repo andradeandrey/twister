@@ -16,7 +16,7 @@ include $(GOROOT)/src/Make.inc
 
 TARG=web
 GOFILES=\
-    spec.go\
+    misc.go\
     web.go\
     router.go\
 

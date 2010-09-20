@@ -15,16 +15,15 @@
 package web
 
 import (
-	"http"
 	"testing"
 )
 
 type rhandler string
 
-func (rhandler) ServeHTTP(conn *http.Conn, req *http.Request) {}
+func (rhandler) ServeWeb(req *Request) {}
 
 func TestRouter(t *testing.T) {
-	r := NewRouter(nil)
+	r := NewRouter()
 	r.Register("/", "GET", rhandler("home-get"))
 	r.Register("/a", "GET", rhandler("a-get"), "*", rhandler("a-*"))
 	r.Register("/b", "GET", rhandler("b-get"), "POST", rhandler("b-post"))
@@ -42,14 +41,14 @@ func TestRouter(t *testing.T) {
 		}
 	}
 
-	expectError := func(method string, path string, statusCode int) {
+	expectError := func(method string, path string, status int) {
 		handler, _, _ := r.find(path, method)
 		re, ok := handler.(*routerError)
 		if !ok {
 			t.Errorf("Unexpected handler type for %s %s", method, path)
 		}
-		if re.statusCode != statusCode {
-			t.Errorf("Unexpected status for %s %s, actual %d expected %d", method, path, re.statusCode, statusCode)
+		if re.status != status {
+			t.Errorf("Unexpected status for %s %s, actual %d expected %d", method, path, re.status, status)
 		}
 	}
 

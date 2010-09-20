@@ -215,7 +215,7 @@ func NewRouter() *Router {
 // the value of the hostOverride flag if set.
 //
 // If a registered handler is not found, then the router dispatches to a
-// default handler.
+// default handler. 
 type HostRouter struct {
 	defaultHandler Handler
 	handlers       map[string]Handler

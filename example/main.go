@@ -31,7 +31,7 @@ const homeStr = `
 <a href="/b/foo/c/bar">/b/foo/c/bar</a><br>
 <a href="/b/foo/c/bar/">/b/foo/c/bar/</a><br>
 <hr>
-{Form}
+{Param}
 </body>
 </html> `
 
@@ -40,12 +40,11 @@ func main() {
     r  := web.NewRouter()
     r.Register("/", "GET",  homeHandler)
     r.Register("/a/<a>/", "GET", homeHandler)
-    r.Register("/b/<a>/c/<b>", "GET", homeHandler)
+    r.Register("/b/<b>/c/<c>", "GET", homeHandler)
 
     hr := web.NewHostRouter(nil)
     hr.Register("www.example.com", r)
 
-    fmt.Println("a")
     err := server.ListenAndServe(":8080", hr)
     fmt.Println("b")
     if err != nil {

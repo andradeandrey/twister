@@ -19,89 +19,68 @@ import (
 	"bufio"
 	"bytes"
 	"reflect"
-	"http"
 	"github.com/garyburd/twister/web"
 )
 
-func compare(t *testing.T, expected *web.Request, s string) {
-	b := bufio.NewReader(bytes.NewBufferString(s))
-	actual := web.NewRequest()
-	err := readStatusLine(b, actual)
-	if err == nil {
-		err = readHeaders(b, actual.Header)
-	}
-	if expected == nil {
-		if err == nil {
-			t.Errorf("parse error expected")
-			return
-		}
-	} else if err != nil {
-		t.Errorf("unexpected error: %s", err)
-		return
-	} else if !reflect.DeepEqual(expected, actual) {
-		t.Errorf("request not equal,\nexpected %q\nactual   %q", expected, actual)
-	}
+type parseTest struct {
+	name    string
+	method  string
+	url     string
+	version int
+	header  web.StringsMap
+	s       string
 }
 
-func mustParseURL(s string) *http.URL {
-	url, err := http.ParseURL(s)
-	if err != nil {
-		panic(err)
-	}
-	return url
-}
-
-func TestEmpty(t *testing.T) {
-	compare(t, nil, ` `)
-}
-
-func TestNoBody(t *testing.T) {
-	compare(t, nil, "GET /foo HTTP/1.1\r\n")
-}
-
-func TestSimple(t *testing.T) {
-	req := web.NewRequest()
-	req.ProtocolMajor = 1
-	req.ProtocolMinor = 1
-	req.URL = mustParseURL("/foo")
-	req.Method = "GET"
-	compare(t, req,
+var parseTests = []parseTest{
+	parseTest{"no body", "", "", 0, web.NewStringsMap(), "GET /foo HTTP/1.1\r\n"},
+	parseTest{"empty", "", "", 0, web.NewStringsMap(), " "},
+	parseTest{"simple", "GET", "/foo", web.ProtocolVersion(1, 1), web.NewStringsMap(),
 		`GET /foo HTTP/1.1
 
-`)
-}
-
-func TestHeaders(t *testing.T) {
-	req := web.NewRequest()
-	req.ProtocolMajor = 1
-	req.ProtocolMinor = 1
-	req.URL = mustParseURL("/foo")
-	req.Method = "GET"
-	req.Header.Set(web.HeaderContentType, "text/html")
-	req.Header.Set(web.HeaderCookie, "hello=world")
-	req.Header.Append(web.HeaderCookie, "foo=bar")
-	compare(t, req,
-		`GeT /foo HTTP/1.1
+`},
+	parseTest{"multihdr", "GET", "/foo", web.ProtocolVersion(1, 0), web.NewStringsMap(
+		web.HeaderContentType, "text/html",
+		web.HeaderCookie, "hello=world",
+		web.HeaderCookie, "foo=bar"),
+		`GET /foo HTTP/1.0
 Content-Type: text/html
-Cookie: hello=world
+CoOkie: hello=world
 Cookie: foo=bar
 
-`)
-}
-
-func TestContinuationLine(t *testing.T) {
-	req := web.NewRequest()
-	req.ProtocolMajor = 1
-	req.ProtocolMinor = 1
-	req.URL = mustParseURL("/foo")
-	req.Method = "GET"
-	req.Header.Set(web.HeaderContentType, "text/html")
-	req.Header.Set(web.HeaderCookie, "hello=world, foo=bar")
-	compare(t, req,
-		`GeT /foo HTTP/1.1
+`},
+	parseTest{"continuation", "GET", "/hello", web.ProtocolVersion(1, 1), web.NewStringsMap(
+		web.HeaderContentType, "text/html",
+		web.HeaderCookie, "hello=world, foo=bar"),
+		`GET /hello HTTP/1.1
 Cookie: hello=world,
  foo=bar
 Content-Type: text/html
 
-`)
+`},
+}
+
+func TestParse(t *testing.T) {
+	for _, tt := range parseTests {
+		b := bufio.NewReader(bytes.NewBufferString(tt.s))
+		method, url, version, statusErr := parseRequestLine(b)
+		header, headerErr := parseHeader(b)
+		if tt.method == "" {
+			if statusErr == nil && headerErr == nil {
+				t.Errorf("%s: expected error", tt.name)
+			}
+		} else {
+			if tt.method != method {
+				t.Errorf("%s: method=%s, expected %s", tt.name, method, tt.method)
+			}
+			if tt.url != url {
+				t.Errorf("%s: url=%s, expected %s", tt.name, url, tt.url)
+			}
+			if tt.version != version {
+				t.Errorf("%s: version=%d, expected %d", tt.name, version, tt.version)
+			}
+			if !reflect.DeepEqual(tt.header, header) {
+				t.Errorf("%s bad header\nexpected: %q\nactual:   %q", tt.name, tt.header, header)
+			}
+		}
+	}
 }
