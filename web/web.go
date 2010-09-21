@@ -15,15 +15,16 @@
 package web
 
 import (
+	"fmt"
 	"bufio"
 	"container/vector"
-	"fmt"
 	"http"
 	"io"
 	"os"
 	"path"
 	"strconv"
 	"strings"
+	"io/ioutil"
 )
 
 var (
@@ -48,21 +49,21 @@ func NewStringsMap(kvs ...string) StringsMap {
 }
 
 // Get returns first value for given key.
-func (m StringsMap) Get(key string) (value string, found bool) {
+func (m StringsMap) Get(key string) (string, bool) {
 	values, found := m[key]
-	if found && len(values) > 0 {
-		return value, true
+	if !found || len(values) == 0 {
+		return "", false
 	}
-	return "", false
+	return values[0], true
 }
 
 // GetDef returns first value for given key, or def if key is not found.
-func (m StringsMap) GetDef(key string, def string) (value string) {
+func (m StringsMap) GetDef(key string, def string) string {
 	values, found := m[key]
-	if found && len(values) > 0 {
-		return value
+	if !found || len(values) == 0 {
+		return def
 	}
-	return def
+	return values[0]
 }
 
 // Append value to slice for given key.
@@ -107,7 +108,7 @@ type Request struct {
 	Param           StringsMap        // Form, QS and other.
 	Cookie          map[string]string // Cookies.
 	Host            string            // Requested host.
-	ContentType     string            // Content type
+	ContentType     string            // Lowercase content type, not including params
 
 	// ErrorHandler responds to the request with the given status code.
 	// Applications set their error handler in middleware. 
@@ -120,7 +121,9 @@ type Request struct {
 	// length is not known.
 	ContentLength int
 
-	Body RequestBody
+	Body RequestBody // The request body
+
+	formParseErr os.Error
 }
 
 // Handler is the interface for web handlers.
@@ -135,7 +138,7 @@ type HandlerFunc func(*Request)
 // ServeWeb calls f(req).
 func (f HandlerFunc) ServeWeb(req *Request) { f(req) }
 
-// NewRequest allocates and initializes an empty request.
+// NewRequest allocates and initializes a request.
 func NewRequest(method string, url string, protocolVersion int, header StringsMap) (req *Request, err os.Error) {
 	req = &Request{
 		Method:          strings.ToUpper(method),
@@ -148,7 +151,12 @@ func NewRequest(method string, url string, protocolVersion int, header StringsMa
 
 	req.URL, err = http.ParseURL(url)
 	if err != nil {
-		return
+		return nil, err
+	}
+
+	err = parseUrlEncodedFormBytes([]byte(req.URL.RawQuery), req.Param)
+	if err != nil {
+		return nil, err
 	}
 
 	// The url overrides header per section 5.2 of rfc 2616
@@ -161,8 +169,7 @@ func NewRequest(method string, url string, protocolVersion int, header StringsMa
 		var err os.Error
 		req.ContentLength, err = strconv.Atoi(s)
 		if err != nil {
-			err = os.ErrorString("bad content length")
-			return
+			return nil, os.ErrorString("bad content length")
 		}
 	} else {
 		req.ContentLength = -1
@@ -173,10 +180,10 @@ func NewRequest(method string, url string, protocolVersion int, header StringsMa
 		for i < len(s) && (IsTokenByte(s[i]) || s[i] == '/') {
 			i++
 		}
-		req.ContentType = s[0:i]
+		req.ContentType = strings.ToLower(s[0:i])
 	}
 
-	return
+	return req, nil
 }
 
 // Respond is a convenience function that adds (key, value) pairs in kvs to a
@@ -221,16 +228,60 @@ func (req *Request) Redirect(url string, perm bool) {
 	req.Respond(status, HeaderLocation, url)
 }
 
-// CheckRequestBodyLength returns true and responds to the request with an
-// error if the content length is greater than the specified value.
-func (req *Request) CheckRequestBodyLength(max int) (fail bool) {
-	// TODO implement me
-	return true
+var errFormParsed = os.NewError("form parsed")
+
+// ParseForm parses url-encoded form bodies. ParseForm is idempotent.
+func (req *Request) ParseForm() os.Error {
+	if req.formParseErr == errFormParsed {
+		return nil
+	} else if req.formParseErr != nil {
+		return req.formParseErr
+	}
+
+	req.formParseErr = errFormParsed
+	if req.ContentType != "application/x-www-form-urlencoded" ||
+		req.ContentLength == 0 ||
+		(req.Method != "POST" && req.Method != "PUT") {
+		return nil
+	}
+	var p []byte
+	if req.ContentLength > 0 {
+		p = make([]byte, req.ContentLength)
+		if _, err := req.Body.Read(p); err != nil {
+			req.formParseErr = err
+			return err
+		}
+	} else {
+		var err os.Error
+		if p, err = ioutil.ReadAll(req.Body); err != nil {
+			req.formParseErr = err
+			return err
+		}
+	}
+	if err := parseUrlEncodedFormBytes(p, req.Param); err != nil {
+		req.formParseErr = err
+		return err
+	}
+	return nil
 }
 
-// CheckXSRF returns true and responds to the request with an error if the
+// CheckRequestBodyLength responds to the request with an error and returns
+// false if the content length is greater than the specified value.
+func (req *Request) CheckRequestBodyLength(max int) (ok bool) {
+	if req.ContentLength <= max {
+		return true
+	}
+	status := StatusRequestEntityTooLarge
+	if _, found := req.Header.Get(HeaderExpect); found {
+		status = StatusExpectationFailed
+	}
+	req.Error(status, "Request entity too large.")
+	return false
+}
+
+// CheckXSRF responds to the request with an error and returns false if the
 // action token in params does not match the action token in the cookie.
-func (req *Request) CheckXSRF(tokenName string) (fail bool) {
+func (req *Request) CheckXSRF(tokenName string) (ok bool) {
 	// TODO implement me
 	return true
 }

@@ -393,6 +393,7 @@ func serveConnection(netConn net.Conn, handler web.Handler) {
 	for {
 		c := conn{netConn: netConn, br: br}
 		if err := c.prepare(); err != nil {
+			log.Stderr("twister/sever: prepare failed", err)
 			break
 		}
 		handler.ServeWeb(c.req)
@@ -400,6 +401,7 @@ func serveConnection(netConn net.Conn, handler web.Handler) {
 			return
 		}
 		if err := c.finish(); err != nil {
+			log.Stderr("twister/sever: finish failed", err)
 			break
 		}
 		if c.closeAfterResponse {

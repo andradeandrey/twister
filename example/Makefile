@@ -10,6 +10,6 @@ GOFILES=\
 include $(GOROOT)/src/Make.cmd
 
 goinstall:
-	goinstall github.com/garyburd/twister/server
 	goinstall github.com/garyburd/twister/web
+	goinstall github.com/garyburd/twister/server
 
