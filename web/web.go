@@ -15,16 +15,18 @@
 package web
 
 import (
-	"fmt"
 	"bufio"
 	"container/vector"
+	"fmt"
 	"http"
+	"time"
 	"io"
+	"io/ioutil"
 	"os"
 	"path"
 	"strconv"
 	"strings"
-	"io/ioutil"
+	"bytes"
 )
 
 var (
@@ -290,4 +292,45 @@ var notFoundHandler = HandlerFunc(func(req *Request) { req.Error(StatusNotFound,
 // NotFoundHandler returns a request handler that responds with 404 not found.
 func NotFoundHandler() Handler {
 	return notFoundHandler
+}
+
+type Cookie struct {
+	Name     string
+	Value    string
+	MaxAge   int
+	Path     string
+	Domain   string
+	HttpOnly bool
+	Secure   bool
+}
+
+func (c *Cookie) String() string {
+	var b bytes.Buffer
+	b.WriteString(c.Name)
+	b.WriteRune('=')
+	b.WriteString(c.Value)
+	if c.MaxAge < 0 {
+		// A date in the past will delete the cookie.
+		b.WriteString("; Expires=Mon, 02 Jan 2006 15:04:05 GMT")
+	}
+	if c.MaxAge > 0 {
+		// Write expires attribute because some browsers do not support max-age.
+		b.WriteString("; Expires=")
+		b.WriteString(time.SecondsToUTC(time.Seconds() + int64(c.MaxAge)).Format(TimeLayout))
+	}
+	if c.Path != "" {
+		b.WriteString("; Path=")
+		b.WriteString(c.Path)
+	}
+	if c.Domain != "" {
+		b.WriteString("; Domain=")
+		b.WriteString(c.Domain)
+	}
+	if c.Secure {
+		b.WriteString("; Secure")
+	}
+	if c.HttpOnly {
+		b.WriteString("; HttpOnly")
+	}
+	return b.String()
 }

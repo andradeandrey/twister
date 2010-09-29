@@ -19,6 +19,9 @@ import (
 	"os"
 )
 
+// TimeLayout is the time layout used for HTTP headers and other values.
+const TimeLayout = "Mon, 02 Jan 2006 15:04:05 GMT"
+
 // Octet tyeps from RFC 2616
 
 var (

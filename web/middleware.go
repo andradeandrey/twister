@@ -35,6 +35,14 @@ func FilterRespond(req *Request, filter func(status int, header StringsMap) (int
 	req.Responder = &respondFilter{req.Responder, filter}
 }
 
+// SetErrorHandler returns a handler that sets the request's error handler to the supplied handler.
+func SetErrorHandler(errorHandler func(req *Request, status int, message string), handler Handler) Handler {
+    return HandlerFunc(func(req *Request) {
+        req.ErrorHandler = errorHandler
+        handler.ServeWeb(req)
+    })
+}
+
 const (
 	XSRFCookieName = "xsrf"
 	XSRFParamName  = "xsrf"
@@ -59,30 +67,40 @@ func ProcessForm(maxRequestBodyLen int, checkXSRF bool, handler Handler) Handler
 			return
 		}
 
-		token, cookieFound := req.Cookie.Get(XSRFCookieName)
-		if len(token) != 8 {
-			cookieFound = false
-		}
-		cookieMatch := cookieFound && token == req.Param.GetDef(XSRFParamName, "")
-		if (req.Method == "POST" || req.Method == "PUT") && !cookieMatch {
-			req.Error(StatusNotFound, "Bad token")
-			return
-		}
-		if !cookieFound {
-			p := make([]byte, 4)
-			_, err := rand.Reader.Read(p)
-			if err != nil {
-				panic("twister: rand read failed")
+		if checkXSRF {
+            const tokenLen = 8
+			token, found := req.Cookie.Get(XSRFCookieName)
+
+            // Create new XSRF token?
+            if !found || len(token) != tokenLen {
+				p := make([]byte, tokenLen/2)
+				_, err := rand.Reader.Read(p)
+				if err != nil {
+					panic("twister: rand read failed")
+				}
+				token = hex.EncodeToString(p)
+				c := Cookie{
+					Name:     XSRFCookieName,
+					Value:    token,
+					Path:     "/",
+					HttpOnly: true,
+				}
+				value := c.String()
+				FilterRespond(req, func(status int, header StringsMap) (int, StringsMap) {
+					header.Append(HeaderSetCookie, value)
+					return status, header
+				})
 			}
-			token = hex.EncodeToString(p)
-			FilterRespond(req, func(status int, header StringsMap) (int, StringsMap) {
-				header.Append(HeaderSetCookie, XSRFCookieName+"="+token+"; path=/")
-				return status, header
-			})
+
+            if token != req.Param.GetDef(XSRFParamName, "") {
+				req.Param.Set(XSRFParamName, token)
+			    if (req.Method == "POST" || req.Method == "PUT") {
+				    req.Error(StatusNotFound, "Bad token")
+				    return
+				}
+            }
 		}
-		if !cookieMatch {
-			req.Param.Set(XSRFParamName, token)
-		}
+
 		handler.ServeWeb(req)
 	})
 }
