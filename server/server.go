@@ -66,7 +66,7 @@ func parseRequestLine(b *bufio.Reader) (method string, url string, version int, 
 
 	m := requestLineRegexp.FindSubmatch(p)
 	if m == nil {
-		err = os.ErrorString("malformed request line")
+		err = os.NewError("malformed request line")
 		return
 	}
 
@@ -126,13 +126,13 @@ func parseHeader(b *bufio.Reader) (header web.StringsMap, err os.Error) {
 
 		// Don't allow huge header lines.
 		if len(p) > maxLineSize {
-			return nil, os.ErrorString("header line too long")
+			return nil, os.NewError("header line too long")
 		}
 
 		if web.IsSpaceByte(p[0]) {
 
 			if lastKey == "" {
-				return nil, os.ErrorString("header continuation before first header")
+				return nil, os.NewError("header continuation before first header")
 			}
 
 			p = trimWSLeft(trimWSRight(p))
@@ -142,7 +142,7 @@ func parseHeader(b *bufio.Reader) (header web.StringsMap, err os.Error) {
 				value := values[len(values)-1]
 				value = value + " " + string(p)
 				if len(value) > maxValueSize {
-					return nil, os.ErrorString("header value too long")
+					return nil, os.NewError("header value too long")
 				}
 				values[len(values)-1] = value
 			}
@@ -152,13 +152,13 @@ func parseHeader(b *bufio.Reader) (header web.StringsMap, err os.Error) {
 			// New header
 			headerCount = headerCount + 1
 			if headerCount > maxHeaderCount {
-				return nil, os.ErrorString("too many headers")
+				return nil, os.NewError("too many headers")
 			}
 
 			// Key
 			i := skipBytes(p, web.IsTokenByte)
 			if i < 1 {
-				return nil, os.ErrorString("missing header key")
+				return nil, os.NewError("missing header key")
 			}
 			key := web.HeaderNameBytes(p[0:i])
 			p = p[i:]
@@ -168,7 +168,7 @@ func parseHeader(b *bufio.Reader) (header web.StringsMap, err os.Error) {
 
 			// Colon
 			if p[0] != ':' {
-				return nil, os.ErrorString("header missing :")
+				return nil, os.NewError("header missing :")
 			}
 			p = p[1:]
 

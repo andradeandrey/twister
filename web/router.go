@@ -47,7 +47,7 @@ import (
 // "*". If a handler is not found, the router responds with HTTP status 405. If
 // a route is not found, then the router responds with HTTP status 404.
 //
-// The handler can access the path parameters in the request Form.
+// The handler can access the path parameters in the request Param.
 //
 // If a pattern ends with '/', then the router redirects the URL without the
 // trailing slash to the URL with the trailing slash.
