@@ -32,9 +32,10 @@ const homeStr = `
 <a href="/a/blorg">/a/blorg</a><br>
 <a href="/a/foo?b=bar&amp;c=quux">/a/foo?b=bar&amp;c=quux</a><br>
 <a href="/a/blorg/">/a/blorg/</a><br>
-<a href="/b/foo/c/bar">/b/foo/c/bar</a><br>
-<a href="/b/foo/c/bar/">/b/foo/c/bar/</a><br>
-<form method="post" action="/c"><input type=text value="hello" name=b><input type="submit"></form></br>
+<a href="/b/foo/c/bar">/b/foo/c/bar</a><br> {URL.Host}
+<a href="/b/foo/c/bar/">/b/foo/c/bar/</a> (not found)<br>
+<form method="post" action="/c"><input type=text value="hello" name=b><input value="xsrf fail" type="submit"></form></br>
+<form method="post" action="/c"><input type=text value="hello" name=b><input value="xsrf fail" type="submit"></form></br>
 <table>
 <tr><th align="left" valign="top">Method</th><td>{Method}</td></tr>
 <tr><th align="left" valign="top">URL</th><td>{URL}</td></tr>
@@ -60,7 +61,8 @@ func main() {
 	hr := web.NewHostRouter(nil)
 	hr.Register("www.example.com", r)
 
-	err := server.ListenAndServe(":8080", hr)
+    p := web.ProcessForm(10000, true, hr)
+	err := server.ListenAndServe(":8080", p)
 	if err != nil {
 		log.Exit("ListenAndServe:", err)
 	}

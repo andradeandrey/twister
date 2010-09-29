@@ -14,7 +14,6 @@
 
 package web
 
-
 import (
 	"strings"
 	"os"
@@ -289,6 +288,43 @@ func parseUrlEncodedFormBytes(p []byte, m StringsMap) os.Error {
 	return nil
 }
 
+func parseCookieValues(values []string) StringsMap {
+	m := make(StringsMap)
+	for _, s := range values {
+		key := ""
+		begin := 0
+		end := 0
+		for i := 0; i < len(s); i++ {
+			switch s[i] {
+			case ' ', '\t':
+				// leading whitespace?
+				if begin == end {
+					begin = i + 1
+					end = begin
+				}
+			case '=':
+				key = s[begin:end]
+				begin = i + 1
+				end = begin
+			case ';':
+				if len(key) > 0 && key[0] != '$' && begin < end {
+					value := s[begin:end]
+					m.Append(key, value)
+				}
+				key = ""
+				begin = i + 1
+				end = begin
+			default:
+				end = i + 1
+			}
+		}
+		if len(key) > 0 && key[0] != '$' && begin < end {
+			m.Append(key, s[begin:end])
+		}
+	}
+	return m
+}
+
 // ProtocolVersion combines HTTP major and minor protocol numbers into a single
 // integer for easy comparision.
 func ProtocolVersion(major int, minor int) int {
@@ -297,5 +333,3 @@ func ProtocolVersion(major int, minor int) int {
 	}
 	return major*1000 + minor
 }
-
-// ProtocolVersionString converts 

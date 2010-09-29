@@ -208,15 +208,16 @@ func (c *conn) prepare() (err os.Error) {
 		c.write100Continue = strings.ToLower(s) == "100-continue"
 	}
 
+	connection := strings.ToLower(req.Header.GetDef(web.HeaderConnection, ""))
 	if version >= web.ProtocolVersion(1, 1) {
-		if s, found := req.Header.Get(web.HeaderConnection); found && strings.ToLower(s) == "close" {
-			c.closeAfterResponse = true
-		}
+		c.closeAfterResponse = connection == "close"
+	} else if version == web.ProtocolVersion(1, 0) && req.ContentLength >= 0 {
+		c.closeAfterResponse = connection != "keep-alive"
 	} else {
 		c.closeAfterResponse = true
 	}
 
-	req.Connection = c
+	req.Responder = c
 	req.Body = requestReader{c}
 	return nil
 }
@@ -256,30 +257,33 @@ func (c *conn) Respond(status int, header web.StringsMap) (body web.ResponseBody
 		return nil
 	}
 	c.respondCalled = true
-	c.chunked = true
-
 	c.requestErr = web.ErrInvalidState
+
+	if _, found := header.Get(web.HeaderTransferEncoding); found {
+		log.Stderr("twister: transfer encoding not allowed")
+		header[web.HeaderTransferEncoding] = nil, false
+	}
+
 	if c.requestAvail > 0 {
 		c.closeAfterResponse = true
 	}
 
+	c.chunked = true
+	c.responseAvail = 0
+
 	if status == web.StatusNotModified {
 		header[web.HeaderContentType] = nil, false
-		header[web.HeaderTransferEncoding] = nil, false
+		header[web.HeaderContentLength] = nil, false
 		c.chunked = false
+	} else if s, found := header.Get(web.HeaderContentLength); found {
+		c.responseAvail, _ = strconv.Atoi(s)
+		c.chunked = false
+	} else if c.req.ProtocolVersion < web.ProtocolVersion(1, 1) {
+		c.closeAfterResponse = true
 	}
 
 	if c.closeAfterResponse {
 		header.Set(web.HeaderConnection, "close")
-		c.chunked = false
-	}
-
-	c.responseAvail = 0
-	if s, found := header.Get(web.HeaderContentLength); found {
-		c.responseAvail, _ = strconv.Atoi(s)
-		c.chunked = false
-	}
-	if _, found := header[web.HeaderTransferEncoding]; found {
 		c.chunked = false
 	}
 
@@ -308,7 +312,7 @@ func (c *conn) Respond(status int, header web.StringsMap) (body web.ResponseBody
 		for _, value := range values {
 			b.WriteString(key)
 			b.WriteString(": ")
-			b.WriteString(value)
+			b.WriteString(cleanHeaderValue(value))
 			b.WriteString("\r\n")
 		}
 	}
@@ -325,7 +329,32 @@ func (c *conn) Respond(status int, header web.StringsMap) (body web.ResponseBody
 	return c.bw
 }
 
+// cleanHeaderValue replaces \r and \n with ' ' in header values to prevent
+// response splitting attacks.  
+func cleanHeaderValue(s string) string {
+	clean := false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c == '\r' || c == '\n' {
+			clean = true
+			break
+		}
+	}
+	if !clean {
+		return s
+	}
+	p := []byte(s)
+	for i := 0; i < len(p); i++ {
+		c := p[i]
+		if c == '\r' || c == '\n' {
+			p[i] = ' '
+		}
+	}
+	return string(p)
+}
+
 func (c *conn) Hijack() (rwc io.ReadWriteCloser, buf *bufio.ReadWriter, err os.Error) {
+	// TODO implement me
 	return
 }
 

@@ -19,6 +19,7 @@ GOFILES=\
     misc.go\
     web.go\
     router.go\
+    middleware.go\
 
 include $(GOROOT)/src/Make.pkg
 

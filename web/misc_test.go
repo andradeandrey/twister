@@ -19,6 +19,32 @@ import (
 	"reflect"
 )
 
+type ParseCookieValuesTest struct {
+	values []string
+	m      StringsMap
+}
+
+var ParseCookieValuesTests = []ParseCookieValuesTest{
+	ParseCookieValuesTest{[]string{"a=b"}, StringsMap{"a": []string{"b"}}},
+	ParseCookieValuesTest{[]string{"a=b; c"}, StringsMap{"a": []string{"b"}}},
+	ParseCookieValuesTest{[]string{"a=b; =c"}, StringsMap{"a": []string{"b"}}},
+	ParseCookieValuesTest{[]string{"a=b; ; "}, StringsMap{"a": []string{"b"}}},
+	ParseCookieValuesTest{[]string{"a=b; c=d"}, StringsMap{"a": []string{"b"}, "c": []string{"d"}}},
+	ParseCookieValuesTest{[]string{"a=b; c=d"}, StringsMap{"a": []string{"b"}, "c": []string{"d"}}},
+	ParseCookieValuesTest{[]string{"a=b;c=d"}, StringsMap{"a": []string{"b"}, "c": []string{"d"}}},
+	ParseCookieValuesTest{[]string{" a=b;c=d "}, StringsMap{"a": []string{"b"}, "c": []string{"d"}}},
+	ParseCookieValuesTest{[]string{"a=b", "c=d"}, StringsMap{"a": []string{"b"}, "c": []string{"d"}}},
+}
+
+func TestParseCookieValues(t *testing.T) {
+	for _, pt := range ParseCookieValuesTests {
+		m := parseCookieValues(pt.values)
+		if !reflect.DeepEqual(pt.m, m) {
+			t.Errorf("values=%s,\nexpected %q\nactual   %q", pt.values, pt.m, m)
+		}
+	}
+}
+
 type ParseUrlEncodedFormTest struct {
 	s string
 	m StringsMap

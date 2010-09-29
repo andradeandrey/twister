@@ -31,6 +31,7 @@ var (
 	// Object not in valid state for call.
 	ErrInvalidState = os.NewError("invalid state")
 	ErrBadFormat    = os.NewError("bad format")
+	errParsed       = os.NewError("item parsed")
 )
 
 // StringsMap maps strings to slices of strings.
@@ -88,8 +89,8 @@ type ResponseBody interface {
 	Flush() os.Error
 }
 
-// Connection represents the server side of an HTTP connection.
-type Connection interface {
+// Responder represents the the response.
+type Responder interface {
 	// Respond commits the status and headers to the network and returns
 	// a writer for the response body.
 	Respond(status int, header StringsMap) ResponseBody
@@ -101,14 +102,14 @@ type Connection interface {
 
 // Request represents an HTTP request.
 type Request struct {
-	Connection      Connection        // The connection.
-	Method          string            // Uppercase request method. GET, POST, etc.
-	URL             *http.URL         // Parsed URL.
-	ProtocolVersion int               // Major version * 1000 + minor version
-	Param           StringsMap        // Form, QS and other.
-	Cookie          map[string]string // Cookies.
-	Host            string            // Requested host.
-	ContentType     string            // Lowercase content type, not including params
+	Responder       Responder  // The response.
+	Method          string     // Uppercase request method. GET, POST, etc.
+	URL             *http.URL  // Parsed URL.
+	ProtocolVersion int        // Major version * 1000 + minor version
+	Param           StringsMap // Form, QS and other.
+	Cookie          StringsMap // Cookies.
+	Host            string     // Requested host.
+	ContentType     string     // Lowercase content type, not including params
 
 	// ErrorHandler responds to the request with the given status code.
 	// Applications set their error handler in middleware. 
@@ -145,8 +146,8 @@ func NewRequest(method string, url string, protocolVersion int, header StringsMa
 		ProtocolVersion: protocolVersion,
 		ErrorHandler:    defaultErrorHandler,
 		Param:           make(StringsMap),
-		Cookie:          make(map[string]string),
 		Header:          header,
+		Cookie:          parseCookieValues(header[HeaderCookie]),
 	}
 
 	req.URL, err = http.ParseURL(url)
@@ -169,9 +170,9 @@ func NewRequest(method string, url string, protocolVersion int, header StringsMa
 		var err os.Error
 		req.ContentLength, err = strconv.Atoi(s)
 		if err != nil {
-			return nil, os.ErrorString("bad content length")
+			return nil, os.NewError("bad content length")
 		}
-	} else {
+	} else if method != "HEAD" && method != "GET" {
 		req.ContentLength = -1
 	}
 
@@ -196,7 +197,7 @@ func (req *Request) Respond(status int, kvs ...string) ResponseBody {
 	for i := 0; i < len(kvs); i += 2 {
 		header.Append(kvs[i], kvs[i+1])
 	}
-	return req.Connection.Respond(status, header)
+	return req.Responder.Respond(status, header)
 }
 
 func defaultErrorHandler(req *Request, status int, message string) {
@@ -228,62 +229,46 @@ func (req *Request) Redirect(url string, perm bool) {
 	req.Respond(status, HeaderLocation, url)
 }
 
-var errFormParsed = os.NewError("form parsed")
+// BodyBytes returns the request body a slice of bytees.
+func (req *Request) BodyBytes() ([]byte, os.Error) {
+	var p []byte
+	if req.ContentLength > 0 {
+		p = make([]byte, req.ContentLength)
+		if _, err := req.Body.Read(p); err != nil {
+			return nil, err
+		}
+	} else {
+		var err os.Error
+		if p, err = ioutil.ReadAll(req.Body); err != nil {
+			return nil, err
+		}
+	}
+	return p, nil
+}
 
 // ParseForm parses url-encoded form bodies. ParseForm is idempotent.
 func (req *Request) ParseForm() os.Error {
-	if req.formParseErr == errFormParsed {
+	if req.formParseErr == errParsed {
 		return nil
 	} else if req.formParseErr != nil {
 		return req.formParseErr
 	}
-
-	req.formParseErr = errFormParsed
+	req.formParseErr = errParsed
 	if req.ContentType != "application/x-www-form-urlencoded" ||
 		req.ContentLength == 0 ||
 		(req.Method != "POST" && req.Method != "PUT") {
 		return nil
 	}
-	var p []byte
-	if req.ContentLength > 0 {
-		p = make([]byte, req.ContentLength)
-		if _, err := req.Body.Read(p); err != nil {
-			req.formParseErr = err
-			return err
-		}
-	} else {
-		var err os.Error
-		if p, err = ioutil.ReadAll(req.Body); err != nil {
-			req.formParseErr = err
-			return err
-		}
+	p, err := req.BodyBytes()
+	if err != nil {
+		req.formParseErr = err
+		return err
 	}
 	if err := parseUrlEncodedFormBytes(p, req.Param); err != nil {
 		req.formParseErr = err
 		return err
 	}
 	return nil
-}
-
-// CheckRequestBodyLength responds to the request with an error and returns
-// false if the content length is greater than the specified value.
-func (req *Request) CheckRequestBodyLength(max int) (ok bool) {
-	if req.ContentLength <= max {
-		return true
-	}
-	status := StatusRequestEntityTooLarge
-	if _, found := req.Header.Get(HeaderExpect); found {
-		status = StatusExpectationFailed
-	}
-	req.Error(status, "Request entity too large.")
-	return false
-}
-
-// CheckXSRF responds to the request with an error and returns false if the
-// action token in params does not match the action token in the cookie.
-func (req *Request) CheckXSRF(tokenName string) (ok bool) {
-	// TODO implement me
-	return true
 }
 
 type redirectHandler struct {
