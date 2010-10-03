@@ -359,10 +359,10 @@ func (c *conn) Hijack() (conn net.Conn, buf []byte, err os.Error) {
 	}
 
 	conn = c.netConn
-    buf, err = c.br.Peek(c.br.Buffered())
-    if err != nil {
-        panic("twsited.server: unexpected error peeking at bufio")
-    }
+	buf, err = c.br.Peek(c.br.Buffered())
+	if err != nil {
+		panic("twsited.server: unexpected error peeking at bufio")
+	}
 
 	c.hijacked = true
 	c.requestErr = web.ErrInvalidState

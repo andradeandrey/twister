@@ -36,9 +36,9 @@ func (conn *WebSocketConn) Close() os.Error {
 }
 
 func (conn *WebSocketConn) Receive() ([]byte, os.Error) {
-    // Support text framing for now. Revisit after browsers support framing
-    // described in later specs.
-    c, err := conn.br.ReadByte()
+	// Support text framing for now. Revisit after browsers support framing
+	// described in later specs.
+	c, err := conn.br.ReadByte()
 	if err != nil {
 		return nil, err
 	}
@@ -53,9 +53,9 @@ func (conn *WebSocketConn) Receive() ([]byte, os.Error) {
 }
 
 func (conn *WebSocketConn) Send(p []byte) os.Error {
-    // Support text framing for now. Revisit after browsers support framing
-    // described in later specs.
-    conn.bw.WriteByte(0)
+	// Support text framing for now. Revisit after browsers support framing
+	// described in later specs.
+	conn.bw.WriteByte(0)
 	conn.bw.Write(p)
 	conn.bw.WriteByte(0xff)
 	return conn.bw.Flush()

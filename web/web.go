@@ -99,7 +99,7 @@ type Responder interface {
 
 	// Hijack lets the caller take over the connection from the HTTP server.
 	// The caller is responsible for closing the connection. Returns connection
-    // and bytes buffered by the server.
+	// and bytes buffered by the server.
 	Hijack() (conn net.Conn, buf []byte, err os.Error)
 }
 
