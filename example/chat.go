@@ -39,7 +39,7 @@ func startHub() {
 
 func chatWsHandler(req *web.Request) {
 	startHub()
-	conn, err := web.NewWebSocketConn(req)
+	conn, err := web.WebSocketUpgrade(req)
 	if err != nil {
 		return
 	}

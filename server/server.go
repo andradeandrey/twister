@@ -353,13 +353,13 @@ func cleanHeaderValue(s string) string {
 	return string(p)
 }
 
-func (c *conn) Hijack() (conn net.Conn, buffered []byte, err os.Error) {
+func (c *conn) Hijack() (conn net.Conn, buf []byte, err os.Error) {
 	if c.respondCalled {
 		return nil, nil, web.ErrInvalidState
 	}
 
 	conn = c.netConn
-    buffered, err = c.br.Peek(c.br.Buffered())
+    buf, err = c.br.Peek(c.br.Buffered())
     if err != nil {
         panic("twsited.server: unexpected error peeking at bufio")
     }

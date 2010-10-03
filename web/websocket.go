@@ -31,34 +31,34 @@ type WebSocketConn struct {
 	bw   *bufio.Writer
 }
 
-func (ws *WebSocketConn) Close() os.Error {
-	return ws.conn.Close()
+func (conn *WebSocketConn) Close() os.Error {
+	return conn.conn.Close()
 }
 
-func (ws *WebSocketConn) Receive() ([]byte, os.Error) {
+func (conn *WebSocketConn) Receive() ([]byte, os.Error) {
     // Support text framing for now. Revisit after browsers support framing
     // described in later specs.
-    c, err := ws.br.ReadByte()
+    c, err := conn.br.ReadByte()
 	if err != nil {
 		return nil, err
 	}
 	if c != 0 {
 		return nil, os.NewError("twister.websocket: unexpected framing.")
 	}
-	p, err := ws.br.ReadSlice(0xff)
+	p, err := conn.br.ReadSlice(0xff)
 	if err != nil {
 		return nil, err
 	}
 	return p[:len(p)-1], nil
 }
 
-func (ws *WebSocketConn) Send(p []byte) os.Error {
+func (conn *WebSocketConn) Send(p []byte) os.Error {
     // Support text framing for now. Revisit after browsers support framing
     // described in later specs.
-    ws.bw.WriteByte(0)
-	ws.bw.Write(p)
-	ws.bw.WriteByte(0xff)
-	return ws.bw.Flush()
+    conn.bw.WriteByte(0)
+	conn.bw.Write(p)
+	conn.bw.WriteByte(0xff)
+	return conn.bw.Flush()
 }
 
 // webSocketKey returns the key bytes from the specified websocket key header.
@@ -85,28 +85,30 @@ func webSocketKey(req *Request, name string) (key []byte, err os.Error) {
 	return key, nil
 }
 
-func NewWebSocketConn(req *Request) (ws *WebSocketConn, err os.Error) {
+// WebSocketUpgrade upgrades the HTTP connection to the WebSocket protocol. The 
+// caller is responsbile for closing the returned connection.
+func WebSocketUpgrade(req *Request) (conn *WebSocketConn, err os.Error) {
 
-	conn, buffered, err := req.Responder.Hijack()
+	netConn, buf, err := req.Responder.Hijack()
 	if err != nil {
 		panic("twister.websocket: hijack failed")
 		return nil, err
 	}
 
 	defer func() {
-		if conn != nil {
-			conn.Close()
+		if netConn != nil {
+			netConn.Close()
 		}
 	}()
 
 	var r io.Reader
-	if len(buffered) > 0 {
-		r = io.MultiReader(bytes.NewBuffer(buffered), conn)
+	if len(buf) > 0 {
+		r = io.MultiReader(bytes.NewBuffer(buf), netConn)
 	} else {
-		r = conn
+		r = netConn
 	}
 	br := bufio.NewReader(r)
-	bw := bufio.NewWriter(conn)
+	bw := bufio.NewWriter(netConn)
 
 	if req.Method != "GET" {
 		return nil, os.NewError("twister.websocket: bad request method")
@@ -170,7 +172,7 @@ func NewWebSocketConn(req *Request) (ws *WebSocketConn, err os.Error) {
 		return nil, err
 	}
 
-	ws = &WebSocketConn{conn, br, bw}
-	conn = nil
-	return ws, nil
+	conn = &WebSocketConn{netConn, br, bw}
+	netConn = nil
+	return conn, nil
 }

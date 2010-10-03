@@ -98,8 +98,9 @@ type Responder interface {
 	Respond(status int, header StringsMap) ResponseBody
 
 	// Hijack lets the caller take over the connection from the HTTP server.
-	// The caller is responsible for closing the connection. 
-	Hijack() (conn net.Conn, buffered []byte, err os.Error)
+	// The caller is responsible for closing the connection. Returns connection
+    // and bytes buffered by the server.
+	Hijack() (conn net.Conn, buf []byte, err os.Error)
 }
 
 // Request represents an HTTP request.
