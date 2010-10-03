@@ -20,6 +20,7 @@ GOFILES=\
     web.go\
     router.go\
     middleware.go\
+    websocket.go\
 
 include $(GOROOT)/src/Make.pkg
 

@@ -14,6 +14,7 @@ Twister is a work in progress.
 
 1. [Install Go](http://golang.org/doc/install.html).
 2. `goinstall github.com/garyburd/twister/web`
+2. `goinstall github.com/garyburd/twister/server`
 
 ## About
 

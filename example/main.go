@@ -10,10 +10,10 @@ import (
 
 func errorHandler(req *web.Request, status int, message string) {
 	homeTempl.Execute(map[string]interface{}{
-		"req":   req,
-        "status": status,
-        "message": message,
-		"xsrf":  req.Param.GetDef(web.XSRFParamName, ""),
+		"req":     req,
+		"status":  status,
+		"message": message,
+		"xsrf":    req.Param.GetDef(web.XSRFParamName, ""),
 	},
 		req.Respond(status, web.HeaderContentType, "text/html"))
 }
@@ -21,10 +21,10 @@ func errorHandler(req *web.Request, status int, message string) {
 
 func homeHandler(req *web.Request) {
 	homeTempl.Execute(map[string]interface{}{
-		"req":  req,
-        "status": web.StatusOK,
-        "message": "ok",
-		"xsrf": req.Param.GetDef(web.XSRFParamName, ""),
+		"req":     req,
+		"status":  web.StatusOK,
+		"message": "ok",
+		"xsrf":    req.Param.GetDef(web.XSRFParamName, ""),
 	},
 		req.Respond(web.StatusOK, web.HeaderContentType, "text/html"))
 }
@@ -50,6 +50,7 @@ const homeStr = `
 <a href="/b/foo/c/bar/">/b/foo/c/bar/</a> (not found)<br>
 <form method="post" action="/c"><input type="hidden" name="xsrf" value="{xsrf}"><input type=text value="hello" name=b><input type="submit"></form>
 <form method="post" action="/c"><input type=text value="hello" name=b><input value="xsrf fail" type="submit"></form>
+<a href="/chat">chat</a>
 <hr>
 Status: {status} {message}
 <hr>
@@ -73,10 +74,13 @@ func main() {
 	h := web.SetErrorHandler(errorHandler,
 		web.ProcessForm(10000, true, web.NewHostRouter(nil).
 			Register("www.example.com", web.NewRouter().
+			Register("/chat", "GET", chatFrameHandler).
+			Register("/chat/ws", "GET", chatWsHandler).
 			Register("/", "GET", homeHandler).
 			Register("/a/<a>/", "GET", homeHandler).
 			Register("/b/<b>/c/<c>", "GET", homeHandler).
 			Register("/c", "POST", homeHandler))))
+
 	err := server.ListenAndServe(":8080", h)
 	if err != nil {
 		log.Exit("ListenAndServe:", err)

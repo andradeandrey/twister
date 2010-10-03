@@ -332,15 +332,15 @@ func (c *conn) Respond(status int, header web.StringsMap) (body web.ResponseBody
 // cleanHeaderValue replaces \r and \n with ' ' in header values to prevent
 // response splitting attacks.  
 func cleanHeaderValue(s string) string {
-	clean := false
+	dirty := false
 	for i := 0; i < len(s); i++ {
 		c := s[i]
 		if c == '\r' || c == '\n' {
-			clean = true
+			dirty = true
 			break
 		}
 	}
-	if !clean {
+	if !dirty {
 		return s
 	}
 	p := []byte(s)
@@ -353,8 +353,24 @@ func cleanHeaderValue(s string) string {
 	return string(p)
 }
 
-func (c *conn) Hijack() (rwc io.ReadWriteCloser, buf *bufio.ReadWriter, err os.Error) {
-	// TODO implement me
+func (c *conn) Hijack() (conn net.Conn, buffered []byte, err os.Error) {
+	if c.respondCalled {
+		return nil, nil, web.ErrInvalidState
+	}
+
+	conn = c.netConn
+    buffered, err = c.br.Peek(c.br.Buffered())
+    if err != nil {
+        panic("twsited.server: unexpected error peeking at bufio")
+    }
+
+	c.hijacked = true
+	c.requestErr = web.ErrInvalidState
+	c.responseErr = web.ErrInvalidState
+	c.req = nil
+	c.br = nil
+	c.netConn = nil
+
 	return
 }
 

@@ -6,6 +6,7 @@ include $(GOROOT)/src/Make.inc
 TARG=example
 GOFILES=\
     main.go\
+    chat.go\
 
 include $(GOROOT)/src/Make.cmd
 

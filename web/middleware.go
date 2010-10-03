@@ -37,10 +37,10 @@ func FilterRespond(req *Request, filter func(status int, header StringsMap) (int
 
 // SetErrorHandler returns a handler that sets the request's error handler to the supplied handler.
 func SetErrorHandler(errorHandler func(req *Request, status int, message string), handler Handler) Handler {
-    return HandlerFunc(func(req *Request) {
-        req.ErrorHandler = errorHandler
-        handler.ServeWeb(req)
-    })
+	return HandlerFunc(func(req *Request) {
+		req.ErrorHandler = errorHandler
+		handler.ServeWeb(req)
+	})
 }
 
 const (
@@ -68,11 +68,11 @@ func ProcessForm(maxRequestBodyLen int, checkXSRF bool, handler Handler) Handler
 		}
 
 		if checkXSRF {
-            const tokenLen = 8
+			const tokenLen = 8
 			token, found := req.Cookie.Get(XSRFCookieName)
 
-            // Create new XSRF token?
-            if !found || len(token) != tokenLen {
+			// Create new XSRF token?
+			if !found || len(token) != tokenLen {
 				p := make([]byte, tokenLen/2)
 				_, err := rand.Reader.Read(p)
 				if err != nil {
@@ -92,13 +92,13 @@ func ProcessForm(maxRequestBodyLen int, checkXSRF bool, handler Handler) Handler
 				})
 			}
 
-            if token != req.Param.GetDef(XSRFParamName, "") {
+			if token != req.Param.GetDef(XSRFParamName, "") {
 				req.Param.Set(XSRFParamName, token)
-			    if (req.Method == "POST" || req.Method == "PUT") {
-				    req.Error(StatusNotFound, "Bad token")
-				    return
+				if req.Method == "POST" || req.Method == "PUT" {
+					req.Error(StatusNotFound, "Bad token")
+					return
 				}
-            }
+			}
 		}
 
 		handler.ServeWeb(req)

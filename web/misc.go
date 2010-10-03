@@ -157,59 +157,60 @@ var StatusText = map[int]string{
 
 // Canonical header name constants.
 const (
-	HeaderAccept             = "Accept"
-	HeaderAcceptCharset      = "Accept-Charset"
-	HeaderAcceptEncoding     = "Accept-Encoding"
-	HeaderAcceptLanguage     = "Accept-Language"
-	HeaderAcceptRanges       = "Accept-Ranges"
-	HeaderAge                = "Age"
-	HeaderAllow              = "Allow"
-	HeaderAuthorization      = "Authorization"
-	HeaderCacheControl       = "Cache-Control"
-	HeaderConnection         = "Connection"
-	HeaderContentEncoding    = "Content-Encoding"
-	HeaderContentLanguage    = "Content-Language"
-	HeaderContentLength      = "Content-Length"
-	HeaderContentLocation    = "Content-Location"
-	HeaderContentMD5         = "Content-Md5"
-	HeaderContentMd5         = "Content-Md5"
-	HeaderContentRange       = "Content-Range"
-	HeaderContentType        = "Content-Type"
-	HeaderDate               = "Date"
-	HeaderETag               = "Etag"
-	HeaderEtag               = "Etag"
-	HeaderExpect             = "Expect"
-	HeaderExpires            = "Expires"
-	HeaderFrom               = "From"
-	HeaderHost               = "Host"
-	HeaderIfMatch            = "If-Match"
-	HeaderIfModifiedSince    = "If-Modified-Since"
-	HeaderIfNoneMatch        = "If-None-Match"
-	HeaderIfRange            = "If-Range"
-	HeaderIfUnmodifiedSince  = "If-Unmodified-Since"
-	HeaderLastModified       = "Last-Modified"
-	HeaderLocation           = "Location"
-	HeaderMaxForwards        = "Max-Forwards"
-	HeaderPragma             = "Pragma"
-	HeaderProxyAuthenticate  = "Proxy-Authenticate"
-	HeaderProxyAuthorization = "Proxy-Authorization"
-	HeaderRange              = "Range"
-	HeaderReferer            = "Referer"
-	HeaderRetryAfter         = "Retry-After"
-	HeaderServer             = "Server"
-	HeaderTE                 = "Te"
-	HeaderTe                 = "Te"
-	HeaderTrailer            = "Trailer"
-	HeaderUpgrade            = "Upgrade"
-	HeaderUserAgent          = "User-Agent"
-	HeaderVary               = "Vary"
-	HeaderVia                = "Via"
-	HeaderWWWAuthenticate    = "Www-Authenticate"
-	HeaderWarning            = "Warning"
-	HeaderWwwAuthenticate    = "Www-Authenticate"
-	HeaderCookie             = "Cookie"
-	HeaderSetCookie          = "Set-Cookie"
-	HeaderTransferEncoding   = "Transfer-Encoding"
+	HeaderAccept               = "Accept"
+	HeaderAcceptCharset        = "Accept-Charset"
+	HeaderAcceptEncoding       = "Accept-Encoding"
+	HeaderAcceptLanguage       = "Accept-Language"
+	HeaderAcceptRanges         = "Accept-Ranges"
+	HeaderAge                  = "Age"
+	HeaderAllow                = "Allow"
+	HeaderAuthorization        = "Authorization"
+	HeaderCacheControl         = "Cache-Control"
+	HeaderConnection           = "Connection"
+	HeaderContentEncoding      = "Content-Encoding"
+	HeaderContentLanguage      = "Content-Language"
+	HeaderContentLength        = "Content-Length"
+	HeaderContentLocation      = "Content-Location"
+	HeaderContentMD5           = "Content-Md5"
+	HeaderContentRange         = "Content-Range"
+	HeaderContentType          = "Content-Type"
+	HeaderCookie               = "Cookie"
+	HeaderDate                 = "Date"
+	HeaderETag                 = "Etag"
+	HeaderEtag                 = "Etag"
+	HeaderExpect               = "Expect"
+	HeaderExpires              = "Expires"
+	HeaderFrom                 = "From"
+	HeaderHost                 = "Host"
+	HeaderIfMatch              = "If-Match"
+	HeaderIfModifiedSince      = "If-Modified-Since"
+	HeaderIfNoneMatch          = "If-None-Match"
+	HeaderIfRange              = "If-Range"
+	HeaderIfUnmodifiedSince    = "If-Unmodified-Since"
+	HeaderLastModified         = "Last-Modified"
+	HeaderLocation             = "Location"
+	HeaderMaxForwards          = "Max-Forwards"
+	HeaderOrigin               = "Origin"
+	HeaderPragma               = "Pragma"
+	HeaderProxyAuthenticate    = "Proxy-Authenticate"
+	HeaderProxyAuthorization   = "Proxy-Authorization"
+	HeaderRange                = "Range"
+	HeaderReferer              = "Referer"
+	HeaderRetryAfter           = "Retry-After"
+	HeaderSecWebSocketKey1     = "Sec-Websocket-Key1"
+	HeaderSecWebSocketKey2     = "Sec-Websocket-Key2"
+	HeaderSecWebSocketProtocol = "Sec-Websocket-Protocol"
+	HeaderServer               = "Server"
+	HeaderSetCookie            = "Set-Cookie"
+	HeaderTE                   = "Te"
+	HeaderTrailer              = "Trailer"
+	HeaderTransferEncoding     = "Transfer-Encoding"
+	HeaderUpgrade              = "Upgrade"
+	HeaderUserAgent            = "User-Agent"
+	HeaderVary                 = "Vary"
+	HeaderVia                  = "Via"
+	HeaderWWWAuthenticate      = "Www-Authenticate"
+	HeaderWarning              = "Warning"
 )
 
 // HeaderName returns the canonical format of the header name s. 
@@ -336,3 +337,18 @@ func ProtocolVersion(major int, minor int) int {
 	}
 	return major*1000 + minor
 }
+
+/*
+type Foobar struct {
+    hmac
+}
+
+func NewFoobar(secrect []byte) *Foobar {
+}
+
+func (f *Foobar) Sign(name string, value string, maxAge int64) string {
+}
+
+func (f *Foobar) Verify(name string, s string) (string, os.Error) {
+}
+*/
