@@ -5,12 +5,12 @@ import (
 	"flag"
 	"github.com/garyburd/twister/web"
 	"github.com/garyburd/twister/server"
-    "template"
+	"template"
 )
 
 func homeHandler(req *web.Request) {
 	homeTempl.Execute(req,
-    req.Respond(web.StatusOK, web.HeaderContentType, "text/html"))
+		req.Respond(web.StatusOK, web.HeaderContentType, "text/html"))
 }
 
 func main() {
@@ -26,7 +26,7 @@ func main() {
 			Register("/core/b/<b>/c/<c>", "GET", coreHandler).
 			Register("/core/c", "POST", coreHandler))))
 
-	err := server.ListenAndServe(":8080", h)
+	err := server.ListenAndServe("localhost:8080", ":8080", h)
 	if err != nil {
 		log.Exit("ListenAndServe:", err)
 	}
@@ -45,4 +45,3 @@ const homeStr = `
 </ul>
 </body>
 </html>`
-

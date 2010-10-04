@@ -47,6 +47,7 @@ Status: {status} {message}
 <hr>
 {.section req}
 <table>
+<tr><th align="left" valign="top">RemoteAddr</th><td>{RemoteAddr}</td></tr>
 <tr><th align="left" valign="top">Method</th><td>{Method}</td></tr>
 <tr><th align="left" valign="top">URL</th><td>{URL}</td></tr>
 <tr><th align="left" valign="top">ProtocolVersion</th><td>{ProtocolVersion}</td></tr>

@@ -1,9 +1,25 @@
-package server
+// Copyright 2010 Gary Burd
+//
+// Licensed under the Apache License, Version 2.0 (the "License"): you may
+// not use this file except in compliance with the License. You may obtain
+// a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+// WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+// License for the specific language governing permissions and limitations
+// under the License.
+
+// The server package implements the HTTP protocol for a web server.
+ppackage server
 
 import (
 	"bufio"
 	"bytes"
 	"github.com/garyburd/twister/web"
+	"http"
 	"io"
 	"log"
 	"net"
@@ -14,12 +30,14 @@ import (
 )
 
 type conn struct {
+	serverName         string
+	secure             bool
+	netConn            net.Conn
 	br                 *bufio.Reader
 	bw                 *bufio.Writer
 	chunked            bool
 	closeAfterResponse bool
 	hijacked           bool
-	netConn            net.Conn
 	req                *web.Request
 	requestAvail       int
 	requestErr         os.Error
@@ -183,7 +201,7 @@ func parseHeader(b *bufio.Reader) (header web.StringsMap, err os.Error) {
 
 func (c *conn) prepare() (err os.Error) {
 
-	method, url, version, err := parseRequestLine(c.br)
+	method, rawURL, version, err := parseRequestLine(c.br)
 	if err != nil {
 		return err
 	}
@@ -193,7 +211,25 @@ func (c *conn) prepare() (err os.Error) {
 		return err
 	}
 
-	req, err := web.NewRequest(method, url, version, header)
+	url, err := http.ParseURL(rawURL)
+	if err != nil {
+		return err
+	}
+
+	if url.Host == "" {
+		url.Host = header.GetDef(web.HeaderHost, "")
+		if url.Host == "" {
+			url.Host = c.serverName
+		}
+	}
+
+	if c.secure {
+		url.Scheme = "https"
+	} else {
+		url.Scheme = "http"
+	}
+
+	req, err := web.NewRequest(c.netConn.RemoteAddr().String(), method, url, version, header)
 	if err != nil {
 		return
 	}
@@ -433,12 +469,18 @@ func (c chunkedWriter) Write(p []byte) (int, os.Error) {
 	return 0, c.responseErr
 }
 
-func serveConnection(netConn net.Conn, handler web.Handler) {
+func serveConnection(serverName string, secure bool, handler web.Handler, netConn net.Conn) {
 	br := bufio.NewReader(netConn)
 	for {
-		c := conn{netConn: netConn, br: br}
+		c := conn{
+			serverName: serverName,
+			secure:     secure,
+			netConn:    netConn,
+			br:         br}
 		if err := c.prepare(); err != nil {
-			log.Stderr("twister/sever: prepare failed", err)
+            if err != os.EOF {
+			    log.Stderr("twister/sever: prepare failed", err)
+            }
 			break
 		}
 		handler.ServeWeb(c.req)
@@ -459,24 +501,24 @@ func serveConnection(netConn net.Conn, handler web.Handler) {
 // Serve accepts incoming HTTP connections on the listener l, creating a new
 // goroutine for each. The goroutines read requests and then call handler to
 // reply to them.
-func Serve(l net.Listener, handler web.Handler) os.Error {
+func Serve(serverName string, secure bool, handler web.Handler, l net.Listener) os.Error {
 	for {
 		netConn, e := l.Accept()
 		if e != nil {
 			return e
 		}
-		go serveConnection(netConn, handler)
+		go serveConnection(serverName, secure, handler, netConn)
 	}
 	return nil
 }
 
 // ListenAndServe listens on the TCP network address addr and then calls Serve
 // with handler to handle requests on incoming connections.  
-func ListenAndServe(addr string, handler web.Handler) os.Error {
+func ListenAndServe(serverName string, addr string, handler web.Handler) os.Error {
 	l, e := net.Listen("tcp", addr)
 	if e != nil {
 		return e
 	}
 	defer l.Close()
-	return Serve(l, handler)
+	return Serve(serverName, false, handler, l)
 }

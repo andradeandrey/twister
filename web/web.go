@@ -12,6 +12,8 @@
 // License for the specific language governing permissions and limitations
 // under the License.
 
+// The web package defines the application programming interface to a web
+// server and implements functionality common to many web applications.
 package web
 
 import (
@@ -51,8 +53,8 @@ func NewStringsMap(kvs ...string) StringsMap {
 	return m
 }
 
-// Get returns first value for given key.
-func (m StringsMap) Get(key string) (string, bool) {
+// Get returns the first value for given key or "" if the key is not found.
+func (m StringsMap) Get(key string) (value string, found bool) {
 	values, found := m[key]
 	if !found || len(values) == 0 {
 		return "", false
@@ -60,7 +62,7 @@ func (m StringsMap) Get(key string) (string, bool) {
 	return values[0], true
 }
 
-// GetDef returns first value for given key, or def if key is not found.
+// GetDef returns first value for given key, or def if the key is not found.
 func (m StringsMap) GetDef(key string, def string) string {
 	values, found := m[key]
 	if !found || len(values) == 0 {
@@ -81,10 +83,12 @@ func (m StringsMap) Set(key string, value string) {
 	m[key] = []string{value}
 }
 
+// RequestBody represents the request body.
 type RequestBody interface {
 	io.Reader
 }
 
+// ResponseBody represents the response body.
 type ResponseBody interface {
 	io.Writer
 	// Flush writes any buffered data to the network.
@@ -105,27 +109,45 @@ type Responder interface {
 
 // Request represents an HTTP request.
 type Request struct {
-	Responder       Responder  // The response.
-	Method          string     // Uppercase request method. GET, POST, etc.
-	URL             *http.URL  // Parsed URL.
-	ProtocolVersion int        // Major version * 1000 + minor version
-	Param           StringsMap // Form, QS and other.
-	Cookie          StringsMap // Cookies.
-	Host            string     // Requested host.
-	ContentType     string     // Lowercase content type, not including params
+	Responder Responder // The response.
+
+	// Uppercase request method. GET, POST, etc.
+	Method string
+
+	// The request URL with host and scheme set appropriately.
+	URL *http.URL
+
+	// Protocol version: major version * 1000 + minor version	
+	ProtocolVersion int
+
+	// The IP address of the client sending the request to the server.
+	RemoteAddr string
+
+	// Header maps canonical header names to slices of header values.
+	Header StringsMap
+
+	// Request params from the query string, post body, routers and other.
+	Param StringsMap
+
+	// Cookies.
+	Cookie StringsMap
+
+	// The requested host, including port number.
+	Host string
+
+	// Lowercase content type, not including params.
+	ContentType string
 
 	// ErrorHandler responds to the request with the given status code.
 	// Applications set their error handler in middleware. 
 	ErrorHandler func(req *Request, status int, message string)
 
-	// Header maps canonical header names to slices of header values.
-	Header StringsMap
-
 	// ContentLength is the length of the request body or -1 if the content
 	// length is not known.
 	ContentLength int
 
-	Body RequestBody // The request body
+	// The request body.
+	Body RequestBody
 
 	formParseErr os.Error
 }
@@ -142,10 +164,12 @@ type HandlerFunc func(*Request)
 // ServeWeb calls f(req).
 func (f HandlerFunc) ServeWeb(req *Request) { f(req) }
 
-// NewRequest allocates and initializes a request.
-func NewRequest(method string, url string, protocolVersion int, header StringsMap) (req *Request, err os.Error) {
+// NewRequest allocates and initializes a request. 
+func NewRequest(remoteAddr string, method string, url *http.URL, protocolVersion int, header StringsMap) (req *Request, err os.Error) {
 	req = &Request{
+		RemoteAddr:      remoteAddr,
 		Method:          strings.ToUpper(method),
+		URL:             url,
 		ProtocolVersion: protocolVersion,
 		ErrorHandler:    defaultErrorHandler,
 		Param:           make(StringsMap),
@@ -153,20 +177,9 @@ func NewRequest(method string, url string, protocolVersion int, header StringsMa
 		Cookie:          parseCookieValues(header[HeaderCookie]),
 	}
 
-	req.URL, err = http.ParseURL(url)
-	if err != nil {
-		return nil, err
-	}
-
 	err = parseUrlEncodedFormBytes([]byte(req.URL.RawQuery), req.Param)
 	if err != nil {
 		return nil, err
-	}
-
-	// The url overrides header per section 5.2 of rfc 2616
-	req.Host = req.URL.Host
-	if req.Host == "" {
-		req.Host = req.Header.GetDef(HeaderHost, "")
 	}
 
 	if s, found := req.Header.Get(HeaderContentLength); found {
