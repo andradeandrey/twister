@@ -241,7 +241,7 @@ var hostOverride = flag.String("hostOverride", "", "Override request host in Hos
 func (router *HostRouter) ServeWeb(req *Request) {
 	var host string
 	if len(*hostOverride) == 0 {
-		host = strings.ToLower(req.Host)
+		host = strings.ToLower(req.URL.Host)
 	} else {
 		host = *hostOverride
 	}

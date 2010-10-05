@@ -64,7 +64,7 @@ func chatWsHandler(req *web.Request) {
 }
 
 func chatFrameHandler(req *web.Request) {
-	chatTempl.Execute(req.Host,
+	chatTempl.Execute(req.URL.Host,
 		req.Respond(web.StatusOK, web.HeaderContentType, "text/html; charset=utf-8"))
 }
 

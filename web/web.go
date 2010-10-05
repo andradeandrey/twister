@@ -132,9 +132,6 @@ type Request struct {
 	// Cookies.
 	Cookie StringsMap
 
-	// The requested host, including port number.
-	Host string
-
 	// Lowercase content type, not including params.
 	ContentType string
 

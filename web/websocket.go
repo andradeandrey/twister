@@ -151,7 +151,7 @@ func WebSocketUpgrade(req *Request) (conn *WebSocketConn, err os.Error) {
 	response := h.Sum()
 
 	// TODO: handle tls
-	location := "ws://" + req.Host + req.URL.RawPath
+	location := "ws://" + req.URL.Host + req.URL.RawPath
 	protocol := req.Header.GetDef(HeaderSecWebSocketProtocol, "")
 
 	bw.WriteString("HTTP/1.1 101 WebSocket Protocol Handshake")

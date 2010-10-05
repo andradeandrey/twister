@@ -13,7 +13,7 @@
 // under the License.
 
 // The server package implements the HTTP protocol for a web server.
-ppackage server
+package server
 
 import (
 	"bufio"
