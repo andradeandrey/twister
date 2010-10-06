@@ -29,6 +29,14 @@ import (
 	"strings"
 )
 
+var (
+	ErrBadRequestLine = os.NewError("could not parse request line")
+	ErrLineTooLong    = os.NewError("request line or header line too long")
+	ErrBadHeaderLine  = os.NewError("could not parse header line")
+	ErrHeaderTooLong  = os.NewError("header value too long")
+	ErrHeadersTooLong = os.NewError("too many headers")
+)
+
 type conn struct {
 	serverName         string
 	secure             bool
@@ -77,6 +85,9 @@ func parseRequestLine(b *bufio.Reader) (method string, url string, version int, 
 
 	p, err := b.ReadSlice('\n')
 	if err != nil {
+		if err == bufio.ErrBufferFull {
+			err = ErrLineTooLong
+		}
 		return
 	}
 
@@ -84,7 +95,7 @@ func parseRequestLine(b *bufio.Reader) (method string, url string, version int, 
 
 	m := requestLineRegexp.FindSubmatch(p)
 	if m == nil {
-		err = os.NewError("malformed request line")
+		err = ErrBadRequestLine
 		return
 	}
 
@@ -125,6 +136,11 @@ func parseHeader(b *bufio.Reader) (header web.StringsMap, err os.Error) {
 	for {
 		p, err := b.ReadSlice('\n')
 		if err != nil {
+			if err == bufio.ErrBufferFull {
+				err = ErrLineTooLong
+			} else if err == os.EOF {
+				err = io.ErrUnexpectedEOF
+			}
 			return nil, err
 		}
 
@@ -144,13 +160,13 @@ func parseHeader(b *bufio.Reader) (header web.StringsMap, err os.Error) {
 
 		// Don't allow huge header lines.
 		if len(p) > maxLineSize {
-			return nil, os.NewError("header line too long")
+			return nil, ErrLineTooLong
 		}
 
 		if web.IsSpaceByte(p[0]) {
 
 			if lastKey == "" {
-				return nil, os.NewError("header continuation before first header")
+				return nil, ErrBadHeaderLine
 			}
 
 			p = trimWSLeft(trimWSRight(p))
@@ -160,7 +176,7 @@ func parseHeader(b *bufio.Reader) (header web.StringsMap, err os.Error) {
 				value := values[len(values)-1]
 				value = value + " " + string(p)
 				if len(value) > maxValueSize {
-					return nil, os.NewError("header value too long")
+					return nil, ErrHeaderTooLong
 				}
 				values[len(values)-1] = value
 			}
@@ -170,13 +186,13 @@ func parseHeader(b *bufio.Reader) (header web.StringsMap, err os.Error) {
 			// New header
 			headerCount = headerCount + 1
 			if headerCount > maxHeaderCount {
-				return nil, os.NewError("too many headers")
+				return nil, ErrHeadersTooLong
 			}
 
 			// Key
 			i := skipBytes(p, web.IsTokenByte)
 			if i < 1 {
-				return nil, os.NewError("missing header key")
+				return nil, ErrBadHeaderLine
 			}
 			key := web.HeaderNameBytes(p[0:i])
 			p = p[i:]
@@ -186,7 +202,7 @@ func parseHeader(b *bufio.Reader) (header web.StringsMap, err os.Error) {
 
 			// Colon
 			if p[0] != ':' {
-				return nil, os.NewError("header missing :")
+				return nil, ErrBadHeaderLine
 			}
 			p = p[1:]
 
@@ -478,9 +494,9 @@ func serveConnection(serverName string, secure bool, handler web.Handler, netCon
 			netConn:    netConn,
 			br:         br}
 		if err := c.prepare(); err != nil {
-            if err != os.EOF {
-			    log.Stderr("twister/sever: prepare failed", err)
-            }
+			if err != os.EOF {
+				log.Stderr("twister/sever: prepare failed", err)
+			}
 			break
 		}
 		handler.ServeWeb(c.req)
