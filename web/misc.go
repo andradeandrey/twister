@@ -238,7 +238,16 @@ func HeaderNameBytes(p []byte) string {
 	return string(p)
 }
 
-const NotHex = 127
+// ProtocolVersion combines HTTP major and minor protocol numbers into a single
+// integer for easy comparision.
+func ProtocolVersion(major int, minor int) int {
+	if minor > 999 {
+		minor = 999
+	}
+	return major*1000 + minor
+}
+
+const notHex = 127
 
 func dehex(c byte) byte {
 	switch {
@@ -249,7 +258,7 @@ func dehex(c byte) byte {
 	case 'A' <= c && c <= 'F':
 		return c - 'A' + 10
 	}
-	return NotHex
+	return notHex
 }
 
 // parseUrlEncodedFormBytes parses the URL-encoded form and appends the values to
@@ -274,7 +283,7 @@ func parseUrlEncodedFormBytes(p []byte, m StringsMap) os.Error {
 			}
 			a := dehex(p[i+1])
 			b := dehex(p[i+2])
-			if a == NotHex || b == NotHex {
+			if a == notHex || b == notHex {
 				return ErrBadFormat
 			}
 			p[j] = a<<4 | b
@@ -329,26 +338,3 @@ func parseCookieValues(values []string) StringsMap {
 	return m
 }
 
-// ProtocolVersion combines HTTP major and minor protocol numbers into a single
-// integer for easy comparision.
-func ProtocolVersion(major int, minor int) int {
-	if minor > 999 {
-		minor = 999
-	}
-	return major*1000 + minor
-}
-
-/*
-type Foobar struct {
-    hmac
-}
-
-func NewFoobar(secrect []byte) *Foobar {
-}
-
-func (f *Foobar) Sign(name string, value string, maxAge int64) string {
-}
-
-func (f *Foobar) Verify(name string, s string) (string, os.Error) {
-}
-*/
